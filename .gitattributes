@@ -1,0 +1,7 @@
+# This repo is a Windows checkout that feeds a Linux (WSL) kernel build.
+# Force LF everywhere so shell scripts and patches never reach the build as
+# CRLF. make and XML strip a trailing CR; shell does NOT -- see CLAUDE.md.
+* text=auto eol=lf
+*.sh text eol=lf
+*.patch text eol=lf
+*.fragment text eol=lf

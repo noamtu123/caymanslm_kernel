@@ -1,0 +1,12 @@
+# Build output and upstream checkouts. Everything here is regenerable by
+# scripts/setup-tree.sh + scripts/build.sh from the refs pinned in pins.sh.
+artifacts/
+build/
+src/
+third_party/
+prebuilt/
+
+# Editor / OS noise
+*.swp
+.DS_Store
+Thumbs.db
