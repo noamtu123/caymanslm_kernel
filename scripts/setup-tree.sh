@@ -94,6 +94,52 @@ apply_patch() {
   fi
 }
 
+# ------------------------------------------------------------- KernelSU ---
+# Deliberately NOT run through KernelSU-Next's own kernel/setup.sh. That script
+# resolves its argument as a git ref and, when the ref does not resolve, falls
+# back to the default branch *silently* -- so a typo would quietly build a
+# different KernelSU than the one pinned. It also `git pull`s, which defeats
+# pinning outright. The three things it actually does are reproduced here
+# against a pinned SHA, and asserted.
+setup_kernelsu() {
+  local ksu_dir="$THIRD_PARTY/KernelSU-Next"
+  local drivers="$KERNEL_SRC/drivers"
+
+  if [ ! -d "$ksu_dir/.git" ]; then
+    echo "Cloning KernelSU-Next ..."
+    git clone -q --branch "$KSU_BRANCH" "$KSU_URL" "$ksu_dir"
+  fi
+  if ! git -C "$ksu_dir" cat-file -e "$KSU_REF^{commit}" 2>/dev/null; then
+    git -C "$ksu_dir" fetch -q --no-tags origin "$KSU_BRANCH"
+  fi
+  git -C "$ksu_dir" checkout -q --detach "$KSU_REF"
+
+  local got
+  got="$(git -C "$ksu_dir" rev-parse HEAD)"
+  if [ "$got" != "$KSU_REF" ]; then
+    echo "error: KernelSU-Next is at $got, expected $KSU_REF" >&2
+    exit 1
+  fi
+  echo "  KernelSU-Next at $got"
+
+  # drivers/kernelsu -> <ksu>/kernel, relative so the tree stays relocatable.
+  ln -sfn "$(realpath --relative-to="$drivers" "$ksu_dir/kernel")" "$drivers/kernelsu"
+
+  grep -q 'kernelsu' "$drivers/Makefile" || \
+    printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> "$drivers/Makefile"
+  grep -q 'source "drivers/kernelsu/Kconfig"' "$drivers/Kconfig" || \
+    sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' "$drivers/Kconfig"
+  echo "  wired into drivers/{Makefile,Kconfig}"
+
+  # KernelSU's own Kbuild refuses to build unless the manual hooks are present,
+  # which is a useful independent check on our patch actually having landed.
+  if ! grep -q 'ksu_handle_sys_reboot' "$KERNEL_SRC/kernel/reboot.c"; then
+    echo "error: manual hooks are missing from kernel/reboot.c -- KernelSU will refuse to build." >&2
+    exit 1
+  fi
+  echo "  manual hooks present"
+}
+
 if [ "$APPLY_PATCHES" = "1" ]; then
   shopt -s nullglob
   patches=("$HERE"/patches/kernel/*.patch)
@@ -106,6 +152,11 @@ if [ "$APPLY_PATCHES" = "1" ]; then
   fi
 else
   echo "Skipping patches (--no-patches)."
+fi
+
+if [ "$APPLY_PATCHES" = "1" ]; then
+  echo "Setting up KernelSU-Next ..."
+  setup_kernelsu
 fi
 
 echo "Workspace ready: $KERNEL_SRC"

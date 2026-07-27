@@ -1,0 +1,11 @@
+# KernelSU Next — caymanslm (4.9.337, non-GKI)
+#
+# Manual hooks, not kprobes. This kernel is pre-4.14 and has no CONFIG_KPROBES;
+# KSU_KPROBES_HOOK additionally requires >= 5.10, so it is not an option here.
+# The hook call sites live in patches/kernel/caymanslm-ksu-manual-hooks.patch.
+CONFIG_KSU=y
+CONFIG_KSU_MANUAL_HOOK=y
+
+# CONFIG_KPROBES is deliberately left unset. Beyond being unnecessary, the
+# upstream guidance is to keep it off with manual hooks so a volume-down press
+# after boot cannot accidentally trip safe mode via a second input hook.
