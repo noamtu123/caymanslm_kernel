@@ -62,7 +62,18 @@ rm -f "$AK3/dtbo" "$AK3/dtbo.img"
 
 # ------------------------------------------------------------------- zip ---
 REV="$(git -C "$KERNEL_SRC" rev-parse --short HEAD)"
-NAME="caymanslm-kernel-$(date +%Y%m%d)-${REV}.zip"
+
+# Tag the filename with what is actually IN the kernel, read back from the
+# built .config rather than from what we think we enabled. The kernel SHA and
+# date alone are not distinguishing: a stock and a KernelSU build of the same
+# source on the same day would otherwise be given identical names, which is a
+# good way to flash the wrong one.
+TAGS=""
+grep -q '^CONFIG_KSU=y' "$KERNEL_OUT/.config" 2>/dev/null && TAGS="${TAGS}-ksu"
+grep -q '^CONFIG_KSU_SUSFS=y' "$KERNEL_OUT/.config" 2>/dev/null && TAGS="${TAGS}-susfs"
+[ -n "$TAGS" ] || TAGS="-stock"
+
+NAME="caymanslm-kernel-$(date +%Y%m%d)-${REV}${TAGS}.zip"
 ZIP="$ARTIFACTS/$NAME"
 rm -f "$ZIP"
 ( cd "$AK3" && zip -qr9 "$ZIP" . -x '.git/*' '.github/*' 'README.md' )
