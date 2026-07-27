@@ -64,21 +64,46 @@ Non-GKI, pre-4.14, no `CONFIG_KPROBES` ⇒ kprobe-based hooking is **not
 available**; **manual hooks are required**. KSU Next supports 4.4–6.6, so this
 is a documented path.
 
-Verified 2026-07-27:
+As integrated, 2026-07-27 (`scripts/setup-tree.sh` + `patches/kernel/`):
 
-- Integration is `setup.sh` with an explicit ref:
-  `curl -LSs .../KernelSU-Next/next/kernel/setup.sh | bash -s legacy`.
-  The argument is a git ref — `legacy` is the branch maintained for old non-GKI
-  kernels, and the script **silently falls back to the default branch** if the
-  ref does not resolve. Pin a tag/SHA and assert what was checked out.
-- `legacy`'s `kernel/Kconfig` offers `KSU_MANUAL_HOOK` (defaults on when
-  KPROBES is absent) and `KSU_KPROBES_HOOK` (needs ≥5.10). Note the upstream
-  docs page writes `CONFIG_KSU_KPROBE_HOOKS`, which does not match the Kconfig —
-  trust the Kconfig.
-- Manual hooks go into five call sites: `do_execve` (`fs/exec.c`),
-  `SYSCALL_DEFINE3` (`fs/open.c`), `vfs_read` (`fs/read_write.c`),
-  `SYSCALL_DEFINE4` (`fs/stat.c`), `SYSCALL_DEFINE4` (`kernel/reboot.c`).
-- Pre-5.10 kernels need `path_umount()` backported into `fs/namespace.c`.
+- **Do not use KernelSU's `kernel/setup.sh`.** It `git pull`s, and it **falls
+  back to the default branch silently** when its ref argument does not resolve —
+  either one quietly builds a different KernelSU than the pinned one. The three
+  things it actually does (symlink `<ksu>/kernel` → `drivers/kernelsu`, append
+  `obj-$(CONFIG_KSU) += kernelsu/` to `drivers/Makefile`, insert
+  `source "drivers/kernelsu/Kconfig"` before `endmenu` in `drivers/Kconfig`) are
+  reproduced in `setup-tree.sh` against a pinned SHA, and asserted.
+- `legacy`'s `kernel/Kconfig` offers `KSU_MANUAL_HOOK` (defaults on when KPROBES
+  is absent) and `KSU_KPROBES_HOOK` (needs ≥5.10). The upstream docs page writes
+  `CONFIG_KSU_KPROBE_HOOKS`, which matches nothing — **trust the Kconfig.**
+- **Six** hook sites, not five — `drivers/input/input.c` is needed too, for
+  volume-down safe mode. Exact symbols: `ksu_handle_execveat` (`fs/exec.c`
+  `do_execveat_common`), `ksu_handle_faccessat` (`fs/open.c`),
+  `ksu_handle_stat` (`fs/stat.c` `newfstatat`), `ksu_handle_vfs_read`
+  (`fs/read_write.c`), `ksu_handle_sys_reboot` (`kernel/reboot.c`),
+  `ksu_handle_input_handle_event` (`drivers/input/input.c`).
+- The reboot hook must sit **before** the `CAP_SYS_BOOT` check: KSU uses its own
+  `magic1` and replies through `*arg` to a manager that is not root.
+- `input.c` must **split** the `disposition` declaration rather than take a call
+  in front of it — this kernel builds with `-Wdeclaration-after-statement`.
+- KernelSU's Kbuild independently gates on the hooks
+  (`$(error ... No hooks were defined)` if `kernel/reboot.c` lacks
+  `ksu_handle_sys_reboot`), so a botched hook patch fails the build rather than
+  silently producing a rootless kernel.
+
+**`path_umount` — the trap.** Pre-5.10 kernels need it, and KernelSU's Kbuild
+*does* inject it (plus `can_umount`, an `fs/internal.h` declaration and a
+seccomp `filter_count` field). But it injects with `sed` while make is
+descending into `drivers/`, by which point `fs/namespace.o` is already compiled
+from unpatched source — so a clean build dies at link with
+`undefined symbol: path_umount` and only succeeds on a *second* run. Carried
+here as `patches/kernel/caymanslm-ksu-path-umount.patch` so it lands first;
+KernelSU's guards then detect it and skip re-injecting.
+
+**Manager APK:** the build hardcodes an expected signature (hash
+`79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7`, size
+`0x3e6`). Only the official KernelSU Next manager is accepted; a mismatched APK
+installs fine but is never granted root, which presents as "KSU is broken".
 
 ### SuSFS
 
