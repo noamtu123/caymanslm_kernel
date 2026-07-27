@@ -31,11 +31,18 @@ case "$IMAGE" in
 esac
 [ -s "$RAW" ] || { echo "error: could not extract a kernel image from $IMAGE" >&2; exit 1; }
 
+# Extract once to a file and grep THAT. Piping `strings` into `grep -q` or
+# `grep -m1` makes grep exit on the first match, which SIGPIPEs strings; under
+# `set -o pipefail` that reads as a failed pipeline and silently inverts every
+# check. It cost a false "EDL marker absent" on a kernel that had it.
+SYMS="$TMP/strings.txt"
+strings -a "$RAW" > "$SYMS"
+
 fail=0
 note() { printf '  %-6s %s\n' "$1" "$2"; }
 
 # --- version -----------------------------------------------------------------
-VERSION="$(strings -a "$RAW" | grep -m1 '^Linux version ' || true)"
+VERSION="$(grep -m1 '^Linux version ' "$SYMS" || true)"
 if [ -z "$VERSION" ]; then
   note FAIL "no 'Linux version' string found"
   fail=1
@@ -56,7 +63,7 @@ fi
 # --- EDL ---------------------------------------------------------------------
 # Same marker patch-android-edl-boot.ps1 greps for. Its absence means
 # `adb reboot edl` is dead, and with it the last-resort recovery path.
-if strings -a "$RAW" | grep -qF "$EDL_MARKER"; then
+if grep -qF "$EDL_MARKER" "$SYMS"; then
   note ok "EDL marker present"
 elif [ "$ALLOW_NO_EDL" = "1" ]; then
   note warn "EDL marker absent (allowed explicitly -- do NOT ship this build)"
@@ -66,9 +73,9 @@ else
 fi
 
 # --- SuSFS (informational until Phase 5) -------------------------------------
-SUS="$(strings -a "$RAW" | grep -m1 -oE 'SUSFS[ _-]?v?[0-9]+\.[0-9]+\.[0-9]+' || true)"
+SUS="$(grep -m1 -oE 'SUSFS[ _-]?v?[0-9]+\.[0-9]+\.[0-9]+' "$SYMS" || true)"
 [ -n "$SUS" ] && note ok "$SUS"
-strings -a "$RAW" | grep -qi 'KernelSU' && note ok "KernelSU present"
+grep -qi 'KernelSU' "$SYMS" && note ok "KernelSU present"
 
 if [ "$fail" != "0" ]; then
   echo "verify-image: FAILED" >&2
