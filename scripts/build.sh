@@ -8,9 +8,12 @@
 #
 #   - LLVM=1 LLVM_IAS=1 (NOT AndroidKernel.mk's REAL_CC scheme -- that file is
 #     dead code on this path)
-#   - no GCC cross-toolchain is present or needed; LLVM=1 makes CROSS_COMPILE
-#     inert, and this tree's compat-vdso Makefile has no CROSS_COMPILE_ARM32
-#     reference so CONFIG_COMPAT_VDSO=y builds with clang alone
+#   - no GCC cross-toolchain is present or needed
+#   - but CROSS_COMPILE is NOT inert: on 4.9 it supplies clang's target triple
+#     (Makefile:531 `CLANG_TRIPLE ?= $(CROSS_COMPILE)`). Leave it unset and
+#     clang silently builds for the x86_64 host, which fails in asm-offsets.c
+#     with "register 'sp' unsuitable" and "out of range for constraint 'I'".
+#   - CROSS_COMPILE_ARM32 must be set to something NON-EMPTY, see below
 #
 # Usage: ./scripts/build.sh [--clean] [--check-config]
 set -euo pipefail
@@ -54,10 +57,25 @@ KMAKE=(
   -j"$(nproc)"
   ARCH=arm64
   LLVM=1 LLVM_IAS=1
+  # Supplies clang's --target. No aarch64-linux-gnu-* binary needs to exist:
+  # LLVM=1 provides the assembler and binutils, and the GCC_TOOLCHAIN_DIR
+  # lookup at Makefile:536 simply resolves empty. A *-linux-android- prefix is
+  # deliberately avoided -- Makefile:534 hard-errors on an Android triple
+  # unless CLANG_TRIPLE overrides it.
+  CROSS_COMPILE=aarch64-linux-gnu-
+  CLANG_TRIPLE=aarch64-linux-gnu-
   HOSTCC=clang HOSTCXX=clang++
   LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy
   KBUILD_BUILD_USER="$KBUILD_USER"
   KBUILD_BUILD_HOST="$KBUILD_HOST"
+  # CONFIG_COMPAT_VDSO=y, and arch/arm64/Makefile hard-errors on an empty
+  # CROSS_COMPILE_ARM32. Only non-emptiness is checked: under clang the compat
+  # vDSO is compiled by CC_ARM32 = clang --target=arm-linux-gnueabi, and the
+  # prefix is used solely to locate a GCC toolchain via `which $(..)ld`. That
+  # lookup fails here, leaving --gcc-toolchain/--prefix empty -- which is
+  # exactly what the known-good OrangeFox build does, since the path IT passes
+  # ($FOX/prebuilts/gcc/linux-x86/arm/...) does not exist in the tree either.
+  CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 )
 [ -x "$LINEAGE_TOOLS_DIR/bin/lz4c" ] && KMAKE+=(LZ4="$LINEAGE_TOOLS_DIR/bin/lz4c")
 

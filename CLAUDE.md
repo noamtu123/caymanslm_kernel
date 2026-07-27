@@ -99,20 +99,44 @@ Verified 2026-07-27 — **this is where the project is most likely to stall:**
   against a 2025-era upstream KernelSU — not KSU Next, and not KSU Next
   `legacy`. **Expect to hand-merge it.** Upstream KSU Next has no SUSFS support
   of its own.
-**But there may be a way around the hand-merge — check this first.** KSU Next
-publishes a tag **`v3.1.0-legacy-susfs`**
-(`ba4422f0556e10f40dda1887631d87a18ede4ec5`) whose `kernel/Kconfig` already
-defines the full `KSU_SUSFS_*` menu *alongside* `KSU_MANUAL_HOOK` — i.e. the
-KernelSU side of the integration is done upstream. If it is usable, only
-susfs4ksu's kernel-side `50_add_susfs_in_kernel-4.9.patch` is needed and the
-18-file merge disappears.
+### SuSFS integration — measured, 2026-07-27. Read before attempting Phase 5.
 
-**Unverified risk:** that tag advertises `SUS_MAP` and
-`HIDE_KSU_SUSFS_SYMBOLS`, which v1.5.5 does *not* have — so it likely expects a
-newer SuSFS than the frozen `kernel-4.9` branch provides. Confirm the
-kernel-side and KSU-side SuSFS versions agree before relying on it.
+Two candidate routes were tested against the real trees. **Both are blocked**;
+neither is a clean merge. Don't rediscover this.
 
-- 4.9 feature set: `SUS_PATH`, `SUS_MOUNT`, `AUTO_ADD_SUS_BIND_MOUNT`,
+**Route A — use KSU Next's pre-integrated SuSFS tag: RULED OUT.**
+`v3.1.0-legacy-susfs` (`ba4422f0…`) does carry a full `KSU_SUSFS_*` menu next to
+`KSU_MANUAL_HOOK`, which looked like it would remove the merge entirely. But it
+targets a **v2.0.0-era kernel side**. Its `kernel/` calls **24 `susfs_*`
+symbols that v1.5.5 does not define** — including non-optional ones like
+`susfs_show_version`, `susfs_get_enabled_features`, `susfs_set_sid` and the
+whole SID/domain family (`susfs_is_current_zygote_domain`,
+`susfs_set_current_proc_umounted`, …), plus `susfs_add_sus_map` and
+`susfs_reorder_mnt_id`. Its `kernel/Kbuild` reads `SUSFS_VERSION` straight from
+`$(srctree)/include/linux/susfs.h`, so it adapts its *reporting* to whatever
+kernel side is present but not its *API expectations*. Pairing it with the
+frozen 4.9 branch will not link.
+
+**Route B — hand-merge v1.5.5's `10_enable_susfs_for_ksu.patch`: not clean on
+any legacy tag.** `git apply --reject` counts (rejected hunks + missing files):
+
+| KSU Next tag | problems |
+|---|---|
+| `v3.0.1-legacy` | 42 |
+| `v3.1.0-legacy` | 42 |
+| `v3.2.0-legacy` | 42, and it has **deleted** `kernel/sucompat.c`, `kernel/throne_tracker.c`, `kernel/throne_tracker.h` — files the patch edits |
+
+The patch was written against 2025-era *upstream KernelSU*; KSU Next forked and
+diverged, so no legacy tag matches it. Rejects concentrate in
+`kernel/selinux/selinux.c` (7), `rules.c` (3), `Makefile` (2), `Kconfig` (1).
+
+**Therefore Phase 5 is a porting job, not a merge**, and the two honest options
+are: (a) port the v2.0.0-era kernel side from a maintained `gki-*` branch back
+to 4.9, then use `v3.1.0-legacy-susfs` as-is; or (b) re-derive v1.5.5's KSU-side
+integration by hand against a chosen legacy tag. Decide by inspecting the actual
+diffs — and note (a) at least targets a *maintained* codebase.
+
+- 4.9 branch feature set: `SUS_PATH`, `SUS_MOUNT`, `AUTO_ADD_SUS_BIND_MOUNT`,
   `AUTO_ADD_SUS_KSU_DEFAULT_MOUNT`, `SUS_KSTAT`, `TRY_UMOUNT`,
   `AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT`, `SPOOF_UNAME`, `ENABLE_LOG`,
   `SPOOF_CMDLINE_OR_BOOTCONFIG`, `OPEN_REDIRECT`, `SUS_SU`.
@@ -157,10 +181,26 @@ Three things in the original brief were wrong. Corrected here:
 - **No GCC cross-toolchain exists, and none is needed.**
   `~/fox/prebuilts/gcc/linux-x86/` contains only `host/`; the
   `aarch64/aarch64-linux-android-4.9` and `arm/arm-linux-androideabi-4.9` paths
-  `BoardConfigKernel.mk` references are absent. The build works because
-  `LLVM=1` makes `CROSS_COMPILE` inert. `CONFIG_COMPAT_VDSO=y` *is* set, but
-  this tree's `arch/arm64/kernel/vdso32/Makefile` has no `CROSS_COMPILE_ARM32`
-  / `CC_ARM32` references and its objects build with clang alone.
+  `BoardConfigKernel.mk` references are absent. `LLVM=1` supplies the
+  assembler and all binutils, so no GCC binary is ever invoked.
+- **`CROSS_COMPILE` is nonetheless required — it is not inert.** On 4.9 it is
+  what gives clang its target triple (`Makefile:531`,
+  `CLANG_TRIPLE ?= $(CROSS_COMPILE)`). Leave it unset and clang silently
+  compiles arm64 sources for the **x86_64 host**, failing in `asm-offsets.c`
+  with `register 'sp' unsuitable for global register variables` and
+  `value '65536' out of range for constraint 'I'`. Pass
+  `CROSS_COMPILE=aarch64-linux-gnu-` (plus a matching `CLANG_TRIPLE`); the
+  `GCC_TOOLCHAIN_DIR` lookup at `Makefile:536` just resolves empty. Avoid a
+  `*-linux-android-` prefix — `Makefile:534` hard-errors on an Android triple.
+- **`CROSS_COMPILE_ARM32` must also be set to a non-empty string.**
+  `CONFIG_COMPAT_VDSO=y`, and `arch/arm64/Makefile` hard-errors on an empty
+  value (`CROSS_COMPILE_ARM32 not defined or empty`). Only non-emptiness is
+  checked. Under clang the compat vDSO is built by
+  `CC_ARM32 = clang --target=arm-linux-gnueabi`; the prefix is used *only* to
+  locate a GCC toolchain via `which $(CROSS_COMPILE_ARM32)ld`, which fails
+  here and leaves `--gcc-toolchain`/`--prefix` empty. That is precisely what
+  the known-good OrangeFox build does too, since the ARM path it passes does
+  not exist either. `build.sh` passes `arm-linux-gnueabi-`.
 - **The running kernel is not the AOSP tree's output.**
   `KERNEL_OBJ/include/generated/compile.h` says `#2 nobody@android-build`; the
   phone reports `#7 noamtu123@DESKTOP-0N0FHOO`. Always set
