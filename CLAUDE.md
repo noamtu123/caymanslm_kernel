@@ -169,6 +169,21 @@ SID-based domain checks, on top of `SUS_PATH`, `SUS_MOUNT`, `SUS_KSTAT`,
 `TRY_UMOUNT`, `SPOOF_UNAME`, `SPOOF_CMDLINE_OR_BOOTCONFIG`, `OPEN_REDIRECT`,
 `ENABLE_LOG`.
 
+## Status
+
+- **Phases 0–4 complete and verified on-device (2026-07-27).**
+  - Standalone build reproduces the OrangeFox reference `.config` byte for byte.
+  - AnyKernel3 + `fastboot boot` trial pipeline works; `boot_b-stock.img` is the
+    ramdisk/header donor and the stock header is preserved verbatim.
+  - KernelSU Next `legacy` @ `53791c92` builds with manual hooks and **runs**:
+    the `com.rifsxd.ksunext` manager reports a compatible kernel. KSU version
+    **33192**; the matching manager release is v3.3.0 (33214).
+  - Subsystems re-verified on the KSU kernel: FBE `/data`, Wi-Fi, audio
+    (121 `/dev/snd` nodes), 29 sensors, modem, 8 CPUs, battery. No Oops/BUG.
+- **Phase 5 (SuSFS) not started.** See the measured plan above.
+- `su` is not available to `adb shell` until shell is granted in the manager —
+  KSU allowlists nothing by default. A denial there is not a fault.
+
 ## Decisions (2026-07-27)
 
 - **LineageOS 22.2 is not installed yet.** It stays the eventual priority
