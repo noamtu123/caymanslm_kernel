@@ -68,6 +68,19 @@ PERL5LIB_DIR="${PERL5LIB_DIR:-$FOX_TREE/prebuilts/tools-lineage/common/perl-base
 # our standalone build reproduces this byte for byte.
 REFERENCE_CONFIG="${REFERENCE_CONFIG:-$FOX_TREE/out/target/product/caymanslm/obj/KERNEL_OBJ/.config}"
 
+# ------------------------------------------------------- boot repacking ---
+# AOSP's mkbootimg/unpack_bootimg. Read-only use, like the toolchain above.
+MKBOOTIMG_DIR="${MKBOOTIMG_DIR:-$FOX_TREE/system/tools/mkbootimg}"
+
+# A STOCK boot image, used only as a donor for the ramdisk and header when
+# building a `fastboot boot` trial image. boot_b is the untouched slot (boot_a
+# currently carries the EDL kernel swap); its ramdisk is stock either way.
+#
+# Header is v2 with a SEPARATE dtb section, os_version 11.0.0,
+# os_patch_level 2022-06. All of that is preserved verbatim -- see mkboot.sh.
+SIBLING_REPO="${SIBLING_REPO:-/mnt/e/orangefox_caymanslm}"
+STOCK_BOOT_IMG="${STOCK_BOOT_IMG:-$SIBLING_REPO/artifacts/edl-backup/boot_b-stock.img}"
+
 # ------------------------------------------------------------ workspace ---
 # Deliberately OUTSIDE the OrangeFox tree: patching ~/fox/kernel/lge/sdm845
 # would put KSU/SuSFS code into the tree the recovery builds from, and

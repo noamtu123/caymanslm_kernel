@@ -1,0 +1,81 @@
+diff --git a/drivers/power/reset/msm-poweroff.c b/drivers/power/reset/msm-poweroff.c
+index e23afa475..1e6d6b383 100644
+--- a/drivers/power/reset/msm-poweroff.c
++++ b/drivers/power/reset/msm-poweroff.c
+@@ -101,9 +101,7 @@ static int dload_type = SCM_DLOAD_FULLDUMP;
+ static void *dload_mode_addr;
+ #endif
+ static bool dload_mode_enabled;
+-#ifndef CONFIG_LGE_HANDLE_PANIC
+ static void *emergency_dload_mode_addr;
+-#endif
+ #ifdef CONFIG_RANDOMIZE_BASE
+ static void *kaslr_imem_addr;
+ #endif
+@@ -209,11 +207,13 @@ static bool get_dload_mode(void)
+ {
+ 	return dload_mode_enabled;
+ }
++#endif
+ 
+ static void enable_emergency_dload_mode(void)
+ {
+ 	int ret;
+ 
++#ifndef CONFIG_LGE_HANDLE_PANIC
+ 	if (emergency_dload_mode_addr) {
+ 		__raw_writel(EMERGENCY_DLOAD_MAGIC1,
+ 				emergency_dload_mode_addr);
+@@ -231,12 +231,12 @@ static void enable_emergency_dload_mode(void)
+ 		/* Make sure all the cookied are flushed to memory */
+ 		mb();
+ 	}
++#endif
+ 
+ 	ret = scm_set_dload_mode(SCM_EDLOAD_MODE, 0);
+ 	if (ret)
+ 		pr_err("Failed to set secure EDLOAD mode: %d\n", ret);
+ }
+-#endif
+ 
+ static int dload_set(const char *val, const struct kernel_param *kp)
+ {
+@@ -365,8 +365,9 @@ static void msm_restart_prepare(const char *cmd)
+ #endif
+ 
+ #ifdef CONFIG_MACH_LGE
+-	/* set warm reset only when panic in progress */
+-	if (in_panic)
++	/* Preserve the Qualcomm emergency-download cookies across an EDL reboot. */
++	if (in_panic ||
++	    ((cmd != NULL && cmd[0] != '\0') && !strcmp(cmd, "edl")))
+ 		need_warm_reset = true;
+ #else
+ 	if (qpnp_pon_check_hard_reset_stored()) {
+@@ -458,10 +459,8 @@ static void msm_restart_prepare(const char *cmd)
+ 				__raw_writel(0x6f656d00 | (code & 0xff),
+ 					     restart_reason);
+ 			}
+-#ifndef CONFIG_LGE_HANDLE_PANIC
+ 		} else if (!strncmp(cmd, "edl", 3)) {
+ 			enable_emergency_dload_mode();
+-#endif
+ 		} else if (!strncmp(cmd, "", 1)) {
+ 			qpnp_pon_set_restart_reason(
+ 				PON_RESTART_REASON_NORMAL);
+@@ -893,6 +892,7 @@ static int msm_restart_probe(struct platform_device *pdev)
+ 		if (!dload_mode_addr)
+ 			pr_err("unable to map imem DLOAD offset\n");
+ 	}
++#endif
+ 
+ 	np = of_find_compatible_node(NULL, NULL, EDL_MODE_PROP);
+ 	if (!np) {
+@@ -902,7 +902,6 @@ static int msm_restart_probe(struct platform_device *pdev)
+ 		if (!emergency_dload_mode_addr)
+ 			pr_err("unable to map imem EDLOAD mode offset\n");
+ 	}
+-#endif
+ #ifdef CONFIG_LGE_USB_GADGET
+ 	np = of_find_compatible_node(NULL, NULL, "qcom,msm-imem-diag-dload");
+ 	if (!np)

@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# setup-tree.sh -- assemble the kernel build workspace from pinned upstream refs.
+#
+# Clones (or resets) the kernel source at the SHA pinned in pins.sh, then
+# re-applies everything under patches/kernel/. Idempotent: safe to re-run, and
+# re-running is how you recover a clean tree after an experiment.
+#
+# The workspace lives OUTSIDE the OrangeFox tree on purpose. Patching
+# ~/fox/kernel/lge/sdm845 would put KernelSU/SuSFS code into the tree the
+# recovery builds from, and `repo sync` would wipe it anyway.
+#
+# Usage: ./scripts/setup-tree.sh [--no-patches] [--clean]
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+. "$HERE/pins.sh"
+
+APPLY_PATCHES=1
+CLEAN=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-patches) APPLY_PATCHES=0 ;;
+    --clean)      CLEAN=1 ;;
+    *) echo "error: unknown argument '$arg'" >&2; exit 1 ;;
+  esac
+done
+
+mkdir -p "$WORKSPACE" "$THIRD_PARTY"
+
+# ------------------------------------------------------------------ kernel ---
+# No --depth: a shallow clone cannot fetch a specific SHA once the branch tip
+# advances past it. Same reasoning as the sibling repo's local manifest.
+if [ ! -d "$KERNEL_SRC/.git" ]; then
+  echo "Cloning kernel source into $KERNEL_SRC (this is ~1 GB, once) ..."
+  git clone --branch "$KERNEL_BRANCH" "$KERNEL_URL" "$KERNEL_SRC"
+else
+  echo "Kernel source already present at $KERNEL_SRC"
+fi
+
+if [ "$CLEAN" = "1" ]; then
+  echo "Resetting kernel tree to pristine ..."
+  git -C "$KERNEL_SRC" reset --hard -q
+  # -e keeps the KernelSU-Next symlink out of harm's way; it is re-made by the
+  # KernelSU setup step rather than by git.
+  git -C "$KERNEL_SRC" clean -fdq -e KernelSU-Next
+fi
+
+if ! git -C "$KERNEL_SRC" cat-file -e "$KERNEL_REF^{commit}" 2>/dev/null; then
+  echo "Fetching pinned kernel revision ..."
+  git -C "$KERNEL_SRC" fetch --no-tags origin "$KERNEL_BRANCH"
+fi
+
+# Only move HEAD when it is not already at the pin, so a re-run does not
+# silently throw away applied patches.
+CURRENT="$(git -C "$KERNEL_SRC" rev-parse HEAD)"
+if [ "$CURRENT" != "$KERNEL_REF" ]; then
+  echo "Checking out $KERNEL_REF ..."
+  git -C "$KERNEL_SRC" checkout -q --detach "$KERNEL_REF"
+fi
+
+# Assert rather than trust. A silently-wrong base makes every downstream
+# result meaningless.
+ACTUAL="$(git -C "$KERNEL_SRC" rev-parse HEAD)"
+if [ "$ACTUAL" != "$KERNEL_REF" ]; then
+  echo "error: kernel HEAD is $ACTUAL, expected $KERNEL_REF" >&2
+  exit 1
+fi
+echo "  kernel at $ACTUAL"
+
+KVER="$(make -s -C "$KERNEL_SRC" kernelversion 2>/dev/null || echo unknown)"
+if [ "$KVER" != "4.9.337" ]; then
+  echo "error: kernel reports version '$KVER', expected 4.9.337." >&2
+  echo "       The drop-in property (matching stock, no vendor-blob ABI break)" >&2
+  echo "       depends on this. Refusing to continue." >&2
+  exit 1
+fi
+echo "  version $KVER"
+
+# ----------------------------------------------------------------- patches ---
+# Same check / reverse-check / fail contract as the sibling repo's
+# apply-fixes.sh, so a partially-patched tree is never mistaken for a clean one.
+apply_patch() {
+  local patch="$1"
+  local name
+  name="$(basename "$patch")"
+  if git -C "$KERNEL_SRC" apply --check "$patch" 2>/dev/null; then
+    git -C "$KERNEL_SRC" apply "$patch"
+    echo "  applied $name"
+  elif git -C "$KERNEL_SRC" apply --reverse --check "$patch" 2>/dev/null; then
+    echo "  $name already applied"
+  else
+    echo "error: $name does not apply cleanly to $KERNEL_SRC" >&2
+    exit 1
+  fi
+}
+
+if [ "$APPLY_PATCHES" = "1" ]; then
+  shopt -s nullglob
+  patches=("$HERE"/patches/kernel/*.patch)
+  shopt -u nullglob
+  if [ ${#patches[@]} -eq 0 ]; then
+    echo "No kernel patches to apply."
+  else
+    echo "Applying kernel patches ..."
+    for p in "${patches[@]}"; do apply_patch "$p"; done
+  fi
+else
+  echo "Skipping patches (--no-patches)."
+fi
+
+echo "Workspace ready: $KERNEL_SRC"
