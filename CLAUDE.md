@@ -99,47 +99,50 @@ Verified 2026-07-27 — **this is where the project is most likely to stall:**
   against a 2025-era upstream KernelSU — not KSU Next, and not KSU Next
   `legacy`. **Expect to hand-merge it.** Upstream KSU Next has no SUSFS support
   of its own.
-### SuSFS integration — measured, 2026-07-27. Read before attempting Phase 5.
+### SuSFS integration — measured 2026-07-27. Read before attempting Phase 5.
 
-Two candidate routes were tested against the real trees. **Both are blocked**;
-neither is a clean merge. Don't rediscover this.
+**Decision: latest on both sides** — KSU Next `legacy` branch head, susfs4ksu
+`gki-android12-5.10` (v2.2.0). The frozen `kernel-4.9` branch is abandoned as a
+dead end. Measurements behind that:
 
-**Route A — use KSU Next's pre-integrated SuSFS tag: RULED OUT.**
-`v3.1.0-legacy-susfs` (`ba4422f0…`) does carry a full `KSU_SUSFS_*` menu next to
-`KSU_MANUAL_HOOK`, which looked like it would remove the merge entirely. But it
-targets a **v2.0.0-era kernel side**. Its `kernel/` calls **24 `susfs_*`
-symbols that v1.5.5 does not define** — including non-optional ones like
-`susfs_show_version`, `susfs_get_enabled_features`, `susfs_set_sid` and the
-whole SID/domain family (`susfs_is_current_zygote_domain`,
-`susfs_set_current_proc_umounted`, …), plus `susfs_add_sus_map` and
-`susfs_reorder_mnt_id`. Its `kernel/Kbuild` reads `SUSFS_VERSION` straight from
-`$(srctree)/include/linux/susfs.h`, so it adapts its *reporting* to whatever
-kernel side is present but not its *API expectations*. Pairing it with the
-frozen 4.9 branch will not link.
+**The 4.9 branch is unusable with any current KSU Next.** v1.5.5's
+`10_enable_susfs_for_ksu.patch` was written against 2025-era *upstream*
+KernelSU. `git apply --reject` scores 42 problems against every legacy tag
+(`v3.0.1`, `v3.1.0`, `v3.2.0`), and `v3.2.0-legacy` no longer even has
+`kernel/sucompat.c` or `kernel/throne_tracker.{c,h}` — KSU Next restructured
+into `kernel/core`, `kernel/feature`, `kernel/hook`, `kernel/policy`,
+`kernel/supercall`.
 
-**Route B — hand-merge v1.5.5's `10_enable_susfs_for_ksu.patch`: not clean on
-any legacy tag.** `git apply --reject` counts (rejected hunks + missing files):
+**`v3.1.0-legacy-susfs` is not the shortcut it looks like.** It does ship a full
+`KSU_SUSFS_*` menu beside `KSU_MANUAL_HOOK`, but it expects a v2.x kernel side:
+of the 33 `susfs_*` symbols it calls, **22 are absent from v1.5.5**, including
+`susfs_show_version`, `susfs_get_enabled_features` and the whole SID/domain
+family. It also is not the latest release. Its `kernel/Kbuild` reads
+`SUSFS_VERSION` from `$(srctree)/include/linux/susfs.h`, so it adapts its
+*reporting* to any kernel side but not its *API expectations*.
 
-| KSU Next tag | problems |
-|---|---|
-| `v3.0.1-legacy` | 42 |
-| `v3.1.0-legacy` | 42 |
-| `v3.2.0-legacy` | 42, and it has **deleted** `kernel/sucompat.c`, `kernel/throne_tracker.c`, `kernel/throne_tracker.h` — files the patch edits |
+**Why latest-on-both is nonetheless the right base.** The maintained branch is
+alive (v2.2.0, commits dated 2026-07-27) and `susfs.h` still defines a
+`NON-GKI` variant, so the codebase has not dropped non-GKI kernels. Its current
+KernelSU-side patch targets exactly the restructured layout KSU Next `legacy`
+now has — **28 of the 29 files it touches exist at legacy HEAD** (only
+`kernel/hook/syscall_event_bridge.c` is missing). That is drift within one
+architecture, not a structural mismatch.
 
-The patch was written against 2025-era *upstream KernelSU*; KSU Next forked and
-diverged, so no legacy tag matches it. Rejects concentrate in
-`kernel/selinux/selinux.c` (7), `rules.c` (3), `Makefile` (2), `Kconfig` (1).
+**Remaining Phase 5 work, quantified:**
 
-**Therefore Phase 5 is a porting job, not a merge**, and the two honest options
-are: (a) port the v2.0.0-era kernel side from a maintained `gki-*` branch back
-to 4.9, then use `v3.1.0-legacy-susfs` as-is; or (b) re-derive v1.5.5's KSU-side
-integration by hand against a chosen legacy tag. Decide by inspecting the actual
-diffs — and note (a) at least targets a *maintained* codebase.
+1. **Backport the kernel-side patch from 5.10 to 4.9.** The real job:
+   `50_add_susfs_in_gki-android12-5.10.patch` is 2653 lines, and `fs/susfs.c`
+   grew 916 → 1468 lines with 8 `LINUX_VERSION_CODE` guards to reconcile.
+2. **Hand-merge the KernelSU-side patch.** A scan of the last 300 `legacy`
+   commits found **no clean apply**; the score improves from 45 problem lines
+   at HEAD to a best of 33 at `942853ee` (2026-03-23). So pick legacy HEAD and
+   merge ~45 lines by hand rather than pinning a stale commit to save 12.
 
-- 4.9 branch feature set: `SUS_PATH`, `SUS_MOUNT`, `AUTO_ADD_SUS_BIND_MOUNT`,
-  `AUTO_ADD_SUS_KSU_DEFAULT_MOUNT`, `SUS_KSTAT`, `TRY_UMOUNT`,
-  `AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT`, `SPOOF_UNAME`, `ENABLE_LOG`,
-  `SPOOF_CMDLINE_OR_BOOTCONFIG`, `OPEN_REDIRECT`, `SUS_SU`.
+Feature set gained over v1.5.5: `SUS_MAP`, `HIDE_KSU_SUSFS_SYMBOLS` and the
+SID-based domain checks, on top of `SUS_PATH`, `SUS_MOUNT`, `SUS_KSTAT`,
+`TRY_UMOUNT`, `SPOOF_UNAME`, `SPOOF_CMDLINE_OR_BOOTCONFIG`, `OPEN_REDIRECT`,
+`ENABLE_LOG`.
 
 ## Decisions (2026-07-27)
 

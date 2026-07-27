@@ -22,32 +22,32 @@ KERNEL_DEFCONFIG="lineageos_caymanslm_defconfig"
 # line -- the one maintained for old non-GKI kernels -- is the only viable one,
 # and manual hooks are mandatory.
 #
-# Two pins, used at different phases:
-#   KSU_REF        Phase 4: KernelSU Next alone. Latest legacy release.
-#   KSU_SUSFS_REF  Phase 5 candidate: a legacy release that already carries
-#                  SUSFS in-tree (its kernel/Kconfig defines the full
-#                  KSU_SUSFS_* menu alongside KSU_MANUAL_HOOK). If it works it
-#                  removes the 18-file hand-merge of susfs4ksu's
-#                  10_enable_susfs_for_ksu.patch entirely.
-#                  UNVERIFIED: it may expect a newer SUSFS than the frozen
-#                  kernel-4.9 branch's v1.5.5 -- it advertises SUS_MAP and
-#                  HIDE_KSU_SUSFS_SYMBOLS, which v1.5.5 does not have. Confirm
-#                  the kernel-side/KSU-side versions agree before relying on it.
+# Pinned at the legacy branch head. Operator preference is latest-on-both, and
+# legacy HEAD is also the right structural match for maintained SuSFS: it
+# carries the restructured layout (kernel/core, kernel/feature, kernel/hook,
+# kernel/policy, kernel/supercall) that susfs4ksu's current KernelSU-side patch
+# targets -- 28 of the 29 files that patch touches exist here.
+#
+# NOT used: v3.1.0-legacy-susfs. It ships SUSFS in-tree, which looked like a
+# shortcut, but it expects a v2.x kernel side and is an older release. See
+# CLAUDE.md for the measurements.
 KSU_URL="https://github.com/KernelSU-Next/KernelSU-Next"
-KSU_TAG="v3.2.0-legacy"
-KSU_REF="9b08e88862000d5c50fb2e43a5b75123cf472e54"
-KSU_SUSFS_TAG="v3.1.0-legacy-susfs"
-KSU_SUSFS_REF="ba4422f0556e10f40dda1887631d87a18ede4ec5"
+KSU_BRANCH="legacy"
+KSU_REF="53791c92bff13d62338f29cc9da035a37652ca91"   # 2026-07-20
 
 # ----------------------------------------------------------------- SuSFS ---
 # Kernel-side only, by decision: this repo produces a SuSFS-capable kernel; the
 # ksu_susfs tool and ksu_module_susfs hiding module are installed separately.
-# The kernel-4.9 branch is FROZEN at 2025-02-23 / SUSFS_VERSION v1.5.5 while
-# every gki-* branch moved on to a v2.0.0-era codebase.
+#
+# LATEST, not the 4.9 branch. `kernel-4.9` is frozen at 2025-02-23 / v1.5.5 and
+# is a dead end -- see CLAUDE.md. The gki-* branches are actively maintained
+# (v2.2.0), and susfs.h carries a NON-GKI variant, so the codebase itself still
+# supports non-GKI kernels. The cost is that its kernel-side patch is written
+# against 5.10 and must be backported to 4.9.
 SUSFS_URL="https://gitlab.com/simonpunk/susfs4ksu"
-SUSFS_BRANCH="kernel-4.9"
-SUSFS_REF="41ba0b533b8524a0ba95a5952506a75f17355450"
-SUSFS_VERSION="v1.5.5"                # asserted in dmesg after flashing
+SUSFS_BRANCH="gki-android12-5.10"
+SUSFS_VERSION="v2.2.0"                # asserted in dmesg after flashing
+SUSFS_KERNEL_PATCH="50_add_susfs_in_gki-android12-5.10.patch"   # needs 4.9 backport
 
 # ----------------------------------------------------------- AnyKernel3 ---
 ANYKERNEL_URL="https://github.com/osm0sis/AnyKernel3"
