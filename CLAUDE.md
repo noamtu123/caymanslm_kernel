@@ -124,7 +124,33 @@ Verified 2026-07-27 — **this is where the project is most likely to stall:**
   against a 2025-era upstream KernelSU — not KSU Next, and not KSU Next
   `legacy`. **Expect to hand-merge it.** Upstream KSU Next has no SUSFS support
   of its own.
-### SuSFS integration — measured 2026-07-27. Read before attempting Phase 5.
+### Which kernel-root solution — settled 2026-07-28, don't re-open
+
+All three live forks were measured against this device's constraints (non-GKI
+4.9, **no `CONFIG_KPROBES`**). **KernelSU Next `legacy` is the right choice**;
+the original assumption held.
+
+| | KSU Next `legacy` | rsuntk `main` | SukiSU-Ultra `main` |
+|---|---|---|---|
+| `KSU_MANUAL_HOOK` config | **yes** | yes | **no** |
+| Build fails if hooks missing | **yes** | no | no |
+| Hiding sources | `selinux_hide`, `kernel_umount` | `kernel_umount` | `selinux_hide`, `kernel_umount`, `uts_spoof` |
+| KPM (inline hooks) | no | no | yes |
+| Last commit | 2026-07-20 | 2026-05-29 | 2026-07-25 |
+
+- **SukiSU-Ultra has no manual-hook Kconfig.** Its documented non-GKI path is to
+  rewrite `#ifdef CONFIG_KPROBES` → `#if defined(CONFIG_KPROBES) && 0` inside
+  its own sources — which fights the no-forks convention and is fragile. On a
+  kernel with no KPROBES at all that is a real cost. It is otherwise the most
+  featureful (KPM, `uts_spoof`); revisit only if those become necessary.
+- **rsuntk** is the non-GKI specialist and does have `KSU_MANUAL_HOOK`, but
+  fewer features, no build-time hook gate, older HEAD, and it **deprecated its
+  own SuSFS branches** (`deprecated/susfs-*`).
+- Upstream `tiann/KernelSU` has **ended non-GKI support** — not a candidate.
+- **No fork ships SuSFS for non-GKI.** Every fork's `kernel/Kconfig` has zero
+  `SUSFS` entries. Switching forks buys nothing on that front.
+
+### SuSFS integration — measured 2026-07-27/28. Read before attempting Phase 5.
 
 **Decision: latest on both sides** — KSU Next `legacy` branch head, susfs4ksu
 `gki-android12-5.10` (v2.2.0). The frozen `kernel-4.9` branch is abandoned as a
@@ -154,20 +180,38 @@ now has — **28 of the 29 files it touches exist at legacy HEAD** (only
 `kernel/hook/syscall_event_bridge.c` is missing). That is drift within one
 architecture, not a structural mismatch.
 
+**The plan changed on 2026-07-28. Use ShirkNeko's 4.9 branch, v1.5.9.** Backing
+out of the 5.10→4.9 backport, because a 4.9-native patch exists and is far
+cheaper:
+
+| route | kernel-side effort |
+|---|---|
+| simonpunk `gki-android12-5.10` v2.2.0 | backport 2653 lines, 8 `LINUX_VERSION_CODE` guards, `fs/susfs.c` 1200→1468 |
+| **ShirkNeko `kernel-4.9` v1.5.9** | **1992-line native 4.9 patch, ~30 problem lines of context drift** |
+| simonpunk `kernel-4.9` v1.5.5 | native but frozen Feb 2025, 32 vs 38 symbols |
+
 **Remaining Phase 5 work, quantified:**
 
-1. **Backport the kernel-side patch from 5.10 to 4.9.** The real job:
-   `50_add_susfs_in_gki-android12-5.10.patch` is 2653 lines, and `fs/susfs.c`
-   grew 916 → 1468 lines with 8 `LINUX_VERSION_CODE` guards to reconcile.
-2. **Hand-merge the KernelSU-side patch.** A scan of the last 300 `legacy`
-   commits found **no clean apply**; the score improves from 45 problem lines
-   at HEAD to a best of 33 at `942853ee` (2026-03-23). So pick legacy HEAD and
-   merge ~45 lines by hand rather than pinning a stale commit to save 12.
+1. **Kernel side** — apply ShirkNeko's `50_add_susfs_in_kernel-4.9.patch`
+   (1992 lines) plus the `fs/susfs.c`, `fs/sus_su.c` and three header drops.
+   It touches 16 files (`fs/namei.c`, `fs/dcache.c`, `fs/namespace.c`,
+   `fs/proc/*`, `fs/stat.c`, `kernel/kallsyms.c`, `kernel/sys.c`, …).
+   ~30 problem lines, almost all `#include <linux/susfs.h>` insertions failing
+   on LineageOS/LG context rather than anything structural.
+2. **KernelSU side** — hand-merge its 1645-line `10_enable_susfs_for_ksu.patch`
+   onto KSU Next `legacy`: **~23 problem lines.**
 
-Feature set gained over v1.5.5: `SUS_MAP`, `HIDE_KSU_SUSFS_SYMBOLS` and the
-SID-based domain checks, on top of `SUS_PATH`, `SUS_MOUNT`, `SUS_KSTAT`,
-`TRY_UMOUNT`, `SPOOF_UNAME`, `SPOOF_CMDLINE_OR_BOOTCONFIG`, `OPEN_REDIRECT`,
-`ENABLE_LOG`.
+**Why hand-merging is unavoidable, on any fork.** Every ready-made 4.9 SuSFS
+patch targets the pre-2026 **flat** KernelSU layout (`kernel/core_hook.c`,
+`kernel/sucompat.c`, `kernel/ksud.c`, `kernel/throne_tracker.c`), and every
+maintained fork has restructured into `kernel/core`, `kernel/feature`, … The
+score is essentially identical whichever you pick — KSU Next `legacy` 23,
+rsuntk `main` 22, SukiSU `main` 24 — so this is not a reason to change forks.
+
+Feature set at v1.5.9: `SUS_PATH`, `SUS_MOUNT`, `SUS_KSTAT`, `TRY_UMOUNT`,
+`SPOOF_UNAME`, `SPOOF_CMDLINE_OR_BOOTCONFIG`, `OPEN_REDIRECT`, `ENABLE_LOG`,
+`SUS_SU`. Only `SUS_MAP` and `HIDE_KSU_SUSFS_SYMBOLS` are v2.x-only — revisit
+the backport if those turn out to matter.
 
 ## Status
 

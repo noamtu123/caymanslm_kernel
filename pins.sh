@@ -39,15 +39,29 @@ KSU_REF="53791c92bff13d62338f29cc9da035a37652ca91"   # 2026-07-20
 # Kernel-side only, by decision: this repo produces a SuSFS-capable kernel; the
 # ksu_susfs tool and ksu_module_susfs hiding module are installed separately.
 #
-# LATEST, not the 4.9 branch. `kernel-4.9` is frozen at 2025-02-23 / v1.5.5 and
-# is a dead end -- see CLAUDE.md. The gki-* branches are actively maintained
-# (v2.2.0), and susfs.h carries a NON-GKI variant, so the codebase itself still
-# supports non-GKI kernels. The cost is that its kernel-side patch is written
-# against 5.10 and must be backported to 4.9.
-SUSFS_URL="https://gitlab.com/simonpunk/susfs4ksu"
-SUSFS_BRANCH="gki-android12-5.10"
-SUSFS_VERSION="v2.2.0"                # asserted in dmesg after flashing
-SUSFS_KERNEL_PATCH="50_add_susfs_in_gki-android12-5.10.patch"   # needs 4.9 backport
+# ShirkNeko's fork, branch kernel-4.9, SUSFS v1.5.9 (2025-07-07).
+#
+# NOT simonpunk/kernel-4.9 (frozen 2025-02-23 at v1.5.5) and NOT the maintained
+# gki-* branches (v2.2.0). Reasoning, measured 2026-07-28:
+#
+#   - v1.5.9 is a 4.9-NATIVE kernel-side patch: 1992 lines, all version-specific
+#     logic already correct. Against our tree it needs ~30 problem lines of
+#     context fixing (LineageOS/LG 4.9 vs generic 4.9), mostly #include
+#     insertions -- shallow and mechanical.
+#   - the gki v2.2.0 alternative would mean backporting 2653 lines from 5.10
+#     with 8 LINUX_VERSION_CODE guards and fs/susfs.c grown 1200 -> 1468 lines.
+#     Strictly more work for features we do not need yet.
+#   - v1.5.9 also beats simonpunk's v1.5.5: newer, 38 vs 32 susfs_* symbols.
+#
+# Both halves still need hand-merging on the KernelSU side, because every
+# ready-made 4.9 patch targets the pre-2026 FLAT KernelSU layout
+# (kernel/core_hook.c, kernel/sucompat.c ...) and every maintained fork has
+# restructured. That cost is ~23 lines and is the same for every fork -- it is
+# not a reason to switch forks. See CLAUDE.md.
+SUSFS_URL="https://github.com/ShirkNeko/susfs4ksu"
+SUSFS_BRANCH="kernel-4.9"
+SUSFS_VERSION="v1.5.9"                # asserted in dmesg after flashing
+SUSFS_KERNEL_PATCH="50_add_susfs_in_kernel-4.9.patch"
 
 # ----------------------------------------------------------- AnyKernel3 ---
 ANYKERNEL_URL="https://github.com/osm0sis/AnyKernel3"
