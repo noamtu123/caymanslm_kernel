@@ -1,0 +1,23 @@
+diff --git a/kernel/supercall/supercall.c b/kernel/supercall/supercall.c
+index b5a780e..e6017f3 100644
+--- a/kernel/supercall/supercall.c
++++ b/kernel/supercall/supercall.c
+@@ -155,6 +155,18 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
+ 
+ 	// Check if this is a request to install KSU fd
+ 	if (magic2 == KSU_INSTALL_MAGIC2) {
++		/*
++		 * The reboot hook runs before the stock CAP_SYS_BOOT check. Do
++		 * not turn its well-known magic values into a public capability
++		 * dispenser: an arbitrary app could otherwise obtain an anonymous
++		 * KSU fd and use it to query KSU state. The verified manager is
++		 * also given an fd by the setresuid hook, so this restriction does
++		 * not change normal manager startup. Root remains intentionally
++		 * eligible for diagnostics and administration.
++		 */
++		if (!is_manager() && current_uid().val != 0)
++			return 0;
++
+ 		int fd = ksu_install_fd();
+ 		// downstream: dereference all arg usage!
+ 		if (copy_to_user((void __user *)*arg, &fd, sizeof(fd))) {

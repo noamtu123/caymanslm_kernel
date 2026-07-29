@@ -128,7 +128,15 @@ setup_kernelsu() {
   if ! git -C "$ksu_dir" cat-file -e "$KSU_REF^{commit}" 2>/dev/null; then
     git -C "$ksu_dir" fetch -q --no-tags origin "$KSU_BRANCH"
   fi
-  git -C "$ksu_dir" checkout -q --detach "$KSU_REF"
+  # A clean replay must reset KernelSU as well as the kernel tree.  Leaving
+  # previously replayed patches in this generated checkout makes subsequent
+  # patch applicability depend on build history rather than the pinned source.
+  if [ "$CLEAN" = "1" ]; then
+    git -C "$ksu_dir" reset --hard -q "$KSU_REF"
+    git -C "$ksu_dir" clean -fdq
+  else
+    git -C "$ksu_dir" checkout -q --detach "$KSU_REF"
+  fi
 
   local got
   got="$(git -C "$ksu_dir" rev-parse HEAD)"
@@ -152,6 +160,7 @@ setup_kernelsu() {
     zzzzzzz-ksu-manager-scan-retry-until-crowned.patch
     zzzzzzzz-ksu-manager-synchronous-setuid-discovery.patch
     zzzzzzzzz-ksu-manager-remove-spurious-dentry-lock-gate.patch
+    zzzzzzzzzzz-ksu-restrict-public-driver-fd.patch
   )
   local ksu_patches=()
   local patch_name
