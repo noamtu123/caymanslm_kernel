@@ -152,7 +152,6 @@ setup_kernelsu() {
     zzzzzzz-ksu-manager-scan-retry-until-crowned.patch
     zzzzzzzz-ksu-manager-synchronous-setuid-discovery.patch
     zzzzzzzzz-ksu-manager-remove-spurious-dentry-lock-gate.patch
-    zzzzzzzzzz-ksu-release-remove-sucompat-log-fingerprints.patch
   )
   local ksu_patches=()
   local patch_name
