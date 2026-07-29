@@ -43,6 +43,10 @@ if [ "$CLEAN" = "1" ]; then
   # -e keeps the KernelSU-Next symlink out of harm's way; it is re-made by the
   # KernelSU setup step rather than by git.
   git -C "$KERNEL_SRC" clean -fdq -e KernelSU-Next
+  # KernelSU is copied into this tree. Its headers and objects are not
+  # reliably dependency-tracked across a clean replay, so an old O= tree
+  # could link pre-replay objects with post-replay sources.
+  rm -rf "$WORKSPACE/build"
 fi
 
 if ! git -C "$KERNEL_SRC" cat-file -e "$KERNEL_REF^{commit}" 2>/dev/null; then

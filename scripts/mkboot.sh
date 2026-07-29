@@ -83,6 +83,25 @@ done
 mkdir -p "$(dirname "$OUT_IMG")"
 python3 "$MKBOOT" "${FINAL[@]}" --output "$OUT_IMG"
 
+# Verify the image we will hand to fastboot, rather than trusting mkbootimg's
+# successful exit.  This catches a section-order or argument-rewrite error
+# before a RAM-boot trial: only our kernel and DTB may differ from the donor.
+VERIFY="$WORK/repacked"
+python3 "$UNPACK" --boot_img "$OUT_IMG" --out "$VERIFY" >/dev/null
+cmp -s "$WORK/our-kernel" "$VERIFY/kernel" || {
+  echo "error: repacked kernel does not match the built Image.gz" >&2
+  exit 1
+}
+cmp -s "$WORK/our-dtb" "$VERIFY/dtb" || {
+  echo "error: repacked DTB does not match the built Image.gz-dtb tail" >&2
+  exit 1
+}
+cmp -s "$WORK/stock/ramdisk" "$VERIFY/ramdisk" || {
+  echo "error: repacking changed the stock ramdisk" >&2
+  exit 1
+}
+echo "  verified repack: built kernel/DTB + untouched stock ramdisk"
+
 echo ""
 echo "Trial image: $OUT_IMG ($(stat -c%s "$OUT_IMG") bytes)"
 echo ""
