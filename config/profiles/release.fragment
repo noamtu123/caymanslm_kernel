@@ -1,0 +1,22 @@
+# Release hardening profile.  Applied only with:
+#   ./scripts/build.sh --profile=release
+#
+# This retains Android/QCOM-facing facilities that require a separate device
+# validation pass (debugfs, BPF, perf, tracing, modules, SELinux develop), but
+# removes broad symbol/debug disclosure that is not required by this root stack.
+
+CONFIG_KALLSYMS=y
+# CONFIG_KALLSYMS_ALL is not set
+CONFIG_KALLSYMS_BASE_RELATIVE=y
+
+# CONFIG_KPROBES is not set
+# CONFIG_FUNCTION_TRACER is not set
+# CONFIG_DYNAMIC_DEBUG is not set
+# CONFIG_PROC_KCORE is not set
+# CONFIG_DEVMEM is not set
+# CONFIG_DEVKMEM is not set
+# CONFIG_DEBUG_INFO is not set
+
+CONFIG_PSTORE=y
+CONFIG_PSTORE_RAM=y
+CONFIG_SECURITY_DMESG_RESTRICT=y

@@ -15,7 +15,7 @@
 #     with "register 'sp' unsuitable" and "out of range for constraint 'I'".
 #   - CROSS_COMPILE_ARM32 must be set to something NON-EMPTY, see below
 #
-# Usage: ./scripts/build.sh [--clean] [--check-config]
+# Usage: ./scripts/build.sh [--clean] [--check-config] [--profile baseline|release|debug]
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,10 +23,14 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 
 CLEAN=0
 CHECK_CONFIG=0
+PROFILE="baseline"
 for arg in "$@"; do
   case "$arg" in
     --clean)        CLEAN=1 ;;
     --check-config) CHECK_CONFIG=1 ;;
+    --profile=baseline) PROFILE="baseline" ;;
+    --profile=release)  PROFILE="release" ;;
+    --profile=debug)    PROFILE="debug" ;;
     *) echo "error: unknown argument '$arg'" >&2; exit 1 ;;
   esac
 done
@@ -83,12 +87,17 @@ echo "Configuring ($KERNEL_DEFCONFIG) ..."
 "${KMAKE[@]}" "$KERNEL_DEFCONFIG"
 
 # Config fragments are merged after the defconfig so a feature can be added
-# without forking the defconfig itself. Empty until Phase 4.
-shopt -s nullglob
-fragments=("$HERE"/config/*.fragment)
-shopt -u nullglob
+# without forking the defconfig itself.  The default baseline is deliberately
+# limited to the proved KSU/SUSFS fragment; release/debug changes require an
+# explicit profile and can never silently alter a recovery build.
+fragments=("$HERE/config/ksu.fragment")
+if [ "$PROFILE" != "baseline" ]; then
+  profile_fragment="$HERE/config/profiles/$PROFILE.fragment"
+  [ -f "$profile_fragment" ] || { echo "error: unknown build profile '$PROFILE'" >&2; exit 1; }
+  fragments+=("$profile_fragment")
+fi
 if [ ${#fragments[@]} -gt 0 ]; then
-  echo "Merging config fragments ..."
+  echo "Merging config fragments (profile: $PROFILE) ..."
   for f in "${fragments[@]}"; do
     echo "  $(basename "$f")"
     cat "$f" >> "$KERNEL_OUT/.config"
@@ -121,6 +130,38 @@ fi
 if ! grep -qx 'CONFIG_IKCONFIG_PROC=y' "$KERNEL_OUT/.config"; then
   echo "error: /proc/config.gz is required for Android VINTF compatibility" >&2
   exit 1
+fi
+
+if [ "$PROFILE" = "release" ]; then
+  required_release_config=(
+    'CONFIG_KALLSYMS=y'
+    'CONFIG_KALLSYMS_BASE_RELATIVE=y'
+    'CONFIG_SECURITY_DMESG_RESTRICT=y'
+    'CONFIG_PSTORE=y'
+    'CONFIG_PSTORE_RAM=y'
+  )
+  for expected in "${required_release_config[@]}"; do
+    if ! grep -qx "$expected" "$KERNEL_OUT/.config"; then
+      echo "error: release profile requires $expected" >&2
+      exit 1
+    fi
+  done
+  forbidden_release_config=(
+    'CONFIG_KALLSYMS_ALL=y'
+    'CONFIG_KPROBES=y'
+    'CONFIG_FUNCTION_TRACER=y'
+    'CONFIG_DYNAMIC_DEBUG=y'
+    'CONFIG_PROC_KCORE=y'
+    'CONFIG_DEVMEM=y'
+    'CONFIG_DEVKMEM=y'
+    'CONFIG_DEBUG_INFO=y'
+  )
+  for forbidden in "${forbidden_release_config[@]}"; do
+    if grep -qx "$forbidden" "$KERNEL_OUT/.config"; then
+      echo "error: release profile must not enable $forbidden" >&2
+      exit 1
+    fi
+  done
 fi
 
 # The Phase 1 correctness gate. If our standalone .config differs from the one

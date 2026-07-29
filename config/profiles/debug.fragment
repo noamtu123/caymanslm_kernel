@@ -1,0 +1,9 @@
+# Diagnostic profile.  This is intentionally opt-in and does not alter the
+# release replay.  It keeps normal printk/audit flow and adds build symbols for
+# post-mortem analysis; private KSU diagnostics remain a separate explicit
+# source patch so they cannot leak into a release image by configuration alone.
+
+CONFIG_DEBUG_INFO=y
+CONFIG_PSTORE=y
+CONFIG_PSTORE_RAM=y
+CONFIG_SECURITY_DMESG_RESTRICT=y

@@ -164,7 +164,6 @@ setup_kernelsu() {
     zzzzzzz-ksu-manager-scan-retry-until-crowned.patch
     zzzzzzzz-ksu-manager-synchronous-setuid-discovery.patch
     zzzzzzzzz-ksu-manager-remove-spurious-dentry-lock-gate.patch
-    zzzzzzzzzzz-ksu-restrict-public-driver-fd.patch
   )
   local ksu_patches=()
   local patch_name
