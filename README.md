@@ -15,8 +15,10 @@ Target ROMs, in priority order:
 
 ## Status
 
-Early bring-up. See [`CLAUDE.md`](CLAUDE.md) for the full technical context and
-the constraints that shape this repo.
+KernelSU Next `v3.2.0-legacy` and the Linux 4.9 backport of SuSFS `v2.2.0`
+build successfully. The SuSFS bridge retains compatibility with the official
+KernelSU Next manager. See [`CLAUDE.md`](CLAUDE.md) for implementation details,
+device constraints, and on-device verification still required.
 
 ## How it is delivered
 
@@ -48,7 +50,7 @@ asserted after checkout — nothing floats.
 | `pins.sh` | every upstream ref, the toolchain paths, and the workspace location |
 | `scripts/` | setup, build, packaging and the unpack-and-assert verifier |
 | `patches/kernel/` | changes to the kernel tree (EDL, `path_umount`, KSU hooks, SuSFS) |
-| `patches/kernelsu/` | changes to KernelSU Next |
+| `patches/kernelsu/` | SuSFS bridge changes to pinned KernelSU Next |
 | `config/` | defconfig fragments for KernelSU and SuSFS |
 | `anykernel/` | AnyKernel3 device configuration |
 

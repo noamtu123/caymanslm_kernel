@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # setup-tree.sh -- assemble the kernel build workspace from pinned upstream refs.
 #
-# Clones (or resets) the kernel source at the SHA pinned in pins.sh, then
-# re-applies everything under patches/kernel/. Idempotent: safe to re-run, and
-# re-running is how you recover a clean tree after an experiment.
+# Clones (or resets) the kernel and KernelSU sources at the SHAs pinned in
+# pins.sh, then applies patches/kernel/ and patches/kernelsu/. Idempotent: safe
+# to re-run, and re-running is how you recover a clean tree after an experiment.
 #
 # The workspace lives OUTSIDE the OrangeFox tree on purpose. Patching
 # ~/fox/kernel/lge/sdm845 would put KernelSU/SuSFS code into the tree the
@@ -94,6 +94,22 @@ apply_patch() {
   fi
 }
 
+apply_ksu_patch() {
+  local ksu_dir="$1"
+  local patch="$2"
+  local name
+  name="$(basename "$patch")"
+  if git -C "$ksu_dir" apply --check "$patch" 2>/dev/null; then
+    git -C "$ksu_dir" apply "$patch"
+    echo "  applied $name"
+  elif git -C "$ksu_dir" apply --reverse --check "$patch" 2>/dev/null; then
+    echo "  $name already applied"
+  else
+    echo "error: $name does not apply cleanly to $ksu_dir" >&2
+    exit 1
+  fi
+}
+
 # ------------------------------------------------------------- KernelSU ---
 # Deliberately NOT run through KernelSU-Next's own kernel/setup.sh. That script
 # resolves its argument as a git ref and, when the ref does not resolve, falls
@@ -121,6 +137,35 @@ setup_kernelsu() {
     exit 1
   fi
   echo "  KernelSU-Next at $got"
+
+  # Release replay is intentionally explicit.  Historical diagnostics patches
+  # are retained beside the integration work for reference, but must never be
+  # silently included in a production kernel (and some were tied to temporary
+  # debugging layouts).  Add a debug patch deliberately in a dedicated debug
+  # replay; do not make the release image depend on wildcard ordering.
+  local ksu_patch_names=(
+    ksu-legacy-zygote-app-process64.patch
+    ksun-v3.2.0-legacy-susfs-v2.2.0.patch
+    z-ksu-legacy-susfs-manager-setuid.patch
+    zz-ksu-legacy-initial-manager-scan.patch
+    zzz-ksu-legacy-verified-manager-scan.patch
+    zzzzzzz-ksu-manager-scan-retry-until-crowned.patch
+    zzzzzzzz-ksu-manager-synchronous-setuid-discovery.patch
+    zzzzzzzzz-ksu-manager-remove-spurious-dentry-lock-gate.patch
+    zzzzzzzzzz-ksu-release-remove-sucompat-log-fingerprints.patch
+  )
+  local ksu_patches=()
+  local patch_name
+  for patch_name in "${ksu_patch_names[@]}"; do
+    ksu_patches+=("$HERE/patches/kernelsu/$patch_name")
+  done
+  if [ ${#ksu_patches[@]} -gt 0 ]; then
+    echo "  applying KernelSU integration patches ..."
+    local p
+    for p in "${ksu_patches[@]}"; do
+      apply_ksu_patch "$ksu_dir" "$p"
+    done
+  fi
 
   # drivers/kernelsu -> <ksu>/kernel, relative so the tree stays relocatable.
   ln -sfn "$(realpath --relative-to="$drivers" "$ksu_dir/kernel")" "$drivers/kernelsu"

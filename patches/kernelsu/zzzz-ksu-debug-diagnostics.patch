@@ -1,0 +1,188 @@
+diff --git a/kernel/Kbuild b/kernel/Kbuild
+--- a/kernel/Kbuild
++++ b/kernel/Kbuild
+@@ -17,3 +17,4 @@ kernelsu-objs += extras.o
+ kernelsu-objs += infra/file_wrapper.o
++kernelsu-$(CONFIG_KSU_DEBUG) += infra/diagnostics.o
+ kernelsu-objs += infra/event_queue.o
+diff --git a/kernel/infra/diagnostics.h b/kernel/infra/diagnostics.h
+new file mode 100644
+--- /dev/null
++++ b/kernel/infra/diagnostics.h
+@@ -0,0 +1,8 @@
++#ifndef __KSU_DIAGNOSTICS_H
++#define __KSU_DIAGNOSTICS_H
++
++void ksu_diag_init(void);
++void ksu_diag_event(const char *fmt, ...);
++
++#endif
+diff --git a/kernel/infra/diagnostics.c b/kernel/infra/diagnostics.c
+new file mode 100644
+--- /dev/null
++++ b/kernel/infra/diagnostics.c
+@@ -0,0 +1,93 @@
++#include <linux/init.h>
++#include <linux/jiffies.h>
++#include <linux/kernel.h>
++#include <linux/proc_fs.h>
++#include <linux/sched.h>
++#include <linux/seq_file.h>
++#include <linux/spinlock.h>
++#include <stdarg.h>
++#include <linux/uidgid.h>
++
++#include "diagnostics.h"
++
++#define KSU_DIAG_EVENTS 96
++#define KSU_DIAG_TEXT 96
++
++struct ksu_diag_entry {
++	unsigned long when;
++	pid_t pid;
++	uid_t uid;
++	char text[KSU_DIAG_TEXT];
++};
++
++static struct ksu_diag_entry entries[KSU_DIAG_EVENTS];
++static DEFINE_SPINLOCK(entries_lock);
++static unsigned int entries_head;
++static unsigned int entries_count;
++
++void ksu_diag_event(const char *fmt, ...)
++{
++	struct ksu_diag_entry *entry;
++	unsigned long flags;
++	va_list args;
++
++	spin_lock_irqsave(&entries_lock, flags);
++	entry = &entries[entries_head];
++	entry->when = jiffies;
++	entry->pid = current->pid;
++	entry->uid = current_uid().val;
++	va_start(args, fmt);
++	vscnprintf(entry->text, sizeof(entry->text), fmt, args);
++	va_end(args);
++	entries_head = (entries_head + 1) % KSU_DIAG_EVENTS;
++	if (entries_count < KSU_DIAG_EVENTS)
++		entries_count++;
++	spin_unlock_irqrestore(&entries_lock, flags);
++}
++
++static int ksu_diag_show(struct seq_file *m, void *unused)
++{
++	unsigned long flags;
++	unsigned int i, start, count;
++
++	spin_lock_irqsave(&entries_lock, flags);
++	start = (entries_head + KSU_DIAG_EVENTS - entries_count) % KSU_DIAG_EVENTS;
++	count = entries_count;
++	spin_unlock_irqrestore(&entries_lock, flags);
++	seq_puts(m, "KernelSU diagnostic ring (debug build)\n");
++	for (i = 0; i < count; i++) {
++		struct ksu_diag_entry entry;
++
++		spin_lock_irqsave(&entries_lock, flags);
++		entry = entries[(start + i) % KSU_DIAG_EVENTS];
++		spin_unlock_irqrestore(&entries_lock, flags);
++		seq_printf(m, "[%lu] pid=%d uid=%u %s\n", entry.when,
++			   entry.pid, entry.uid, entry.text);
++	}
++	return 0;
++}
++
++static int ksu_diag_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, ksu_diag_show, NULL);
++}
++
++static const struct file_operations ksu_diag_fops = {
++	.owner = THIS_MODULE,
++	.open = ksu_diag_open,
++	.read = seq_read,
++	.llseek = seq_lseek,
++	.release = single_release,
++};
++
++void __init ksu_diag_init(void)
++{
++	if (!proc_create("ksu_diag", 0444, NULL, &ksu_diag_fops))
++		pr_err("ksu_diag: proc creation failed\n");
++	else
++		ksu_diag_event("ring initialized");
++}
+diff --git a/kernel/core/init.c b/kernel/core/init.c
+--- a/kernel/core/init.c
++++ b/kernel/core/init.c
+@@ -21,4 +21,7 @@
+ #include "feature/sulog.h"
++#ifdef CONFIG_KSU_DEBUG
++#include "infra/diagnostics.h"
++#endif
+ #include "infra/file_wrapper.h"
+@@ -100,5 +103,9 @@ int __init kernelsu_init(void)
+     if (!ksu_cred) {
+         pr_err("prepare cred failed!\n");
+     }
++#ifdef CONFIG_KSU_DEBUG
++    ksu_diag_init();
++    ksu_diag_event("kernelsu init late_loaded=%d", ksu_late_loaded);
++#endif
+ 
+ #ifdef CONFIG_KSU_SUSFS
+diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
+--- a/kernel/hook/setuid_hook.c
++++ b/kernel/hook/setuid_hook.c
+@@ -24,4 +24,7 @@
+ #include "manager/throne_tracker.h"
++#ifdef CONFIG_KSU_DEBUG
++#include "infra/diagnostics.h"
++#endif
+ #include "selinux/selinux.h"
+@@ -65,3 +68,6 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+     pr_debug("handle_setresuid from %d to %d\n", old_uid, new_uid);
++#ifdef CONFIG_KSU_DEBUG
++    ksu_diag_event("setuid old=%u new=%u", old_uid, new_uid);
++#endif
+ 
+     /*
+@@ -76,3 +82,6 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+     if (unlikely(is_uid_manager(new_uid))) {
++#ifdef CONFIG_KSU_DEBUG
++        ksu_diag_event("manager accepted uid=%u", new_uid);
++#endif
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+diff --git a/kernel/manager/throne_tracker.c b/kernel/manager/throne_tracker.c
+--- a/kernel/manager/throne_tracker.c
++++ b/kernel/manager/throne_tracker.c
+@@ -17,4 +17,7 @@
+ #include "throne_tracker.h"
++#ifdef CONFIG_KSU_DEBUG
++#include "infra/diagnostics.h"
++#endif
+ #include "compat/kernel_compat.h"
+@@ -46,4 +49,7 @@ static void crown_manager(const char *apk, struct list_head *uid_data)
+ 			pr_info("Crowning manager: %s(uid=%d)\n", pkg, np->uid);
+ 			ksu_set_manager_appid(np->uid);
++#ifdef CONFIG_KSU_DEBUG
++			ksu_diag_event("manager crowned uid=%u", np->uid);
++#endif
+ 			break;
+diff --git a/kernel/supercall/supercall.c b/kernel/supercall/supercall.c
+--- a/kernel/supercall/supercall.c
++++ b/kernel/supercall/supercall.c
+@@ -20,4 +20,7 @@
+ #include "manager/manager_identity.h"
++#ifdef CONFIG_KSU_DEBUG
++#include "infra/diagnostics.h"
++#endif
+ 
+ #include "sulog/event.h"
+@@ -80,3 +83,6 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
+ #ifdef CONFIG_KSU_SUSFS
+ 	if (magic2 == SUSFS_MAGIC && current_uid().val == 0) {
++#ifdef CONFIG_KSU_DEBUG
++		ksu_diag_event("susfs supercall cmd=%u", cmd);
++#endif
+ 		switch (cmd) {

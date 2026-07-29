@@ -1,0 +1,12 @@
+diff --git a/kernel/infra/diagnostics.c b/kernel/infra/diagnostics.c
+--- a/kernel/infra/diagnostics.c
++++ b/kernel/infra/diagnostics.c
+@@ -5,7 +5,7 @@
+ #include <linux/sched.h>
+ #include <linux/seq_file.h>
+ #include <linux/spinlock.h>
+-#include <linux/stdarg.h>
++#include <stdarg.h>
+ #include <linux/uidgid.h>
+ 
+ #include "diagnostics.h"

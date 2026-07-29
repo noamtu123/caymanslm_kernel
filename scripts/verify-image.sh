@@ -25,10 +25,15 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 RAW="$TMP/vmlinux.raw"
 
-case "$IMAGE" in
-  *.gz|*.gz-dtb) gzip -dc "$IMAGE" > "$RAW" 2>/dev/null || true ;;
-  *)             cp "$IMAGE" "$RAW" ;;
-esac
+# Detect compression from the bytes, not the filename. Release artifacts often
+# carry descriptive suffixes after "Image.gz-dtb", and those are still gzip
+# streams followed by a DTB.
+GZIP_MAGIC="$(od -An -tx1 -N2 "$IMAGE" | tr -d ' \n')"
+if [ "$GZIP_MAGIC" = "1f8b" ]; then
+  gzip -dc "$IMAGE" > "$RAW" 2>/dev/null || true
+else
+  cp "$IMAGE" "$RAW"
+fi
 [ -s "$RAW" ] || { echo "error: could not extract a kernel image from $IMAGE" >&2; exit 1; }
 
 # Extract once to a file and grep THAT. Piping `strings` into `grep -q` or
@@ -37,6 +42,18 @@ esac
 # check. It cost a false "EDL marker absent" on a kernel that had it.
 SYMS="$TMP/strings.txt"
 strings -a "$RAW" > "$SYMS"
+
+CONFIG_TEXT="$SYMS"
+PUBLIC_CONFIG=0
+EXTRACT_IKCONFIG="$KERNEL_SRC/scripts/extract-ikconfig"
+if [ -x "$EXTRACT_IKCONFIG" ]; then
+  EXTRACTED_CONFIG="$TMP/config.txt"
+  if "$EXTRACT_IKCONFIG" "$RAW" > "$EXTRACTED_CONFIG" &&
+     [ -s "$EXTRACTED_CONFIG" ]; then
+    CONFIG_TEXT="$EXTRACTED_CONFIG"
+    PUBLIC_CONFIG=1
+  fi
+fi
 
 fail=0
 note() { printf '  %-6s %s\n' "$1" "$2"; }
@@ -72,10 +89,39 @@ else
   fail=1
 fi
 
-# --- SuSFS (informational until Phase 5) -------------------------------------
-SUS="$(grep -m1 -oE 'SUSFS[ _-]?v?[0-9]+\.[0-9]+\.[0-9]+' "$SYMS" || true)"
-[ -n "$SUS" ] && note ok "$SUS"
-grep -qi 'KernelSU' "$SYMS" && note ok "KernelSU present"
+# --- root stack --------------------------------------------------------------
+if grep -qF "$SUSFS_VERSION" "$SYMS"; then
+  note ok "SuSFS $SUSFS_VERSION present"
+else
+  note FAIL "SuSFS $SUSFS_VERSION marker absent"
+  fail=1
+fi
+
+if [ "$PUBLIC_CONFIG" = "1" ]; then
+  if ! grep -qx 'CONFIG_IKCONFIG_PROC=y' "$CONFIG_TEXT"; then
+    note FAIL "public /proc/config.gz view is absent"
+    fail=1
+  fi
+  if grep -qE '^(# )?CONFIG_KSU' "$CONFIG_TEXT"; then
+    note FAIL "public /proc/config.gz view exposes KSU/SuSFS options"
+    fail=1
+  fi
+  note ok "public /proc/config.gz view is present and KSU/SuSFS config is redacted"
+else
+  note FAIL "could not extract the public /proc/config.gz view"
+  fail=1
+fi
+if ! grep -qx 'CONFIG_SECURITY_DMESG_RESTRICT=y' "$CONFIG_TEXT"; then
+  note FAIL "public config does not show unprivileged dmesg restriction"
+  fail=1
+fi
+
+if grep -qi 'KernelSU' "$SYMS"; then
+  note ok "KernelSU present"
+else
+  note FAIL "KernelSU marker absent"
+  fail=1
+fi
 
 if [ "$fail" != "0" ]; then
   echo "verify-image: FAILED" >&2

@@ -1,0 +1,98 @@
+diff --git a/kernel/Kconfig b/kernel/Kconfig
+--- a/kernel/Kconfig
++++ b/kernel/Kconfig
+@@ -16,3 +16,12 @@ config KSU_DEBUG
+ 	  Enable KernelSU debug mode.
+ 
++config KSU_DIAGNOSTICS
++	bool "KernelSU passive diagnostic ring (development only)"
++	depends on KSU
++	default n
++	help
++	  Publish a bounded KSU/SuSFS event timeline through /proc/ksu_diag.
++	  Unlike KSU_DEBUG this does not alter root policy. Do not enable it in
++	  a release or hiding-focused build because it discloses root-stack state.
++
+ config KSU_DISABLE_MANAGER
+ 	bool "Disable KernelSU manager integration"
+diff --git a/kernel/Kbuild b/kernel/Kbuild
+--- a/kernel/Kbuild
++++ b/kernel/Kbuild
+@@ -17,3 +17,3 @@ kernelsu-objs += extras.o
+ kernelsu-objs += infra/file_wrapper.o
+-kernelsu-$(CONFIG_KSU_DEBUG) += infra/diagnostics.o
++kernelsu-$(CONFIG_KSU_DIAGNOSTICS) += infra/diagnostics.o
+ kernelsu-objs += infra/event_queue.o
+diff --git a/kernel/core/init.c b/kernel/core/init.c
+--- a/kernel/core/init.c
++++ b/kernel/core/init.c
+@@ -23,5 +23,5 @@
+ #include "ksu.h"
+ #include "feature/sulog.h"
+-#ifdef CONFIG_KSU_DEBUG
++#ifdef CONFIG_KSU_DIAGNOSTICS
+ #include "infra/diagnostics.h"
+ #endif
+@@ -103,7 +103,7 @@ int __init kernelsu_init(void)
+         pr_err("prepare cred failed!\n");
+     }
+-#ifdef CONFIG_KSU_DEBUG
++#ifdef CONFIG_KSU_DIAGNOSTICS
+     ksu_diag_init();
+     ksu_diag_event("kernelsu init late_loaded=%d", ksu_late_loaded);
+ #endif
+diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
+--- a/kernel/hook/setuid_hook.c
++++ b/kernel/hook/setuid_hook.c
+@@ -25,5 +25,5 @@
+ #include "manager/manager_identity.h"
+ #include "manager/throne_tracker.h"
+-#ifdef CONFIG_KSU_DEBUG
++#ifdef CONFIG_KSU_DIAGNOSTICS
+ #include "infra/diagnostics.h"
+ #endif
+@@ -67,5 +67,5 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+     pr_debug("handle_setresuid from %d to %d\n", old_uid, new_uid);
+-#ifdef CONFIG_KSU_DEBUG
++#ifdef CONFIG_KSU_DIAGNOSTICS
+     ksu_diag_event("setuid old=%u new=%u", old_uid, new_uid);
+ #endif
+@@ -82,5 +82,5 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+     if (unlikely(is_uid_manager(new_uid))) {
+-#ifdef CONFIG_KSU_DEBUG
++#ifdef CONFIG_KSU_DIAGNOSTICS
+         ksu_diag_event("manager accepted uid=%u", new_uid);
+ #endif
+diff --git a/kernel/manager/throne_tracker.c b/kernel/manager/throne_tracker.c
+--- a/kernel/manager/throne_tracker.c
++++ b/kernel/manager/throne_tracker.c
+@@ -18,5 +18,5 @@
+ #include "manager_identity.h"
+ #include "throne_tracker.h"
+-#ifdef CONFIG_KSU_DEBUG
++#ifdef CONFIG_KSU_DIAGNOSTICS
+ #include "infra/diagnostics.h"
+ #endif
+@@ -49,5 +49,5 @@ static void crown_manager(const char *apk, struct list_head *uid_data)
+ 			pr_info("Crowning manager: %s(uid=%d)\n", pkg, np->uid);
+ 			ksu_set_manager_appid(np->uid);
+-#ifdef CONFIG_KSU_DEBUG
++#ifdef CONFIG_KSU_DIAGNOSTICS
+ 			ksu_diag_event("manager crowned uid=%u", np->uid);
+ #endif
+diff --git a/kernel/supercall/supercall.c b/kernel/supercall/supercall.c
+--- a/kernel/supercall/supercall.c
++++ b/kernel/supercall/supercall.c
+@@ -21,5 +21,5 @@
+ #include "klog.h" // IWYU pragma: keep
+ #include "manager/manager_identity.h"
+-#ifdef CONFIG_KSU_DEBUG
++#ifdef CONFIG_KSU_DIAGNOSTICS
+ #include "infra/diagnostics.h"
+ #endif
+@@ -83,5 +83,5 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd,
+ 	if (magic2 == SUSFS_MAGIC && current_uid().val == 0) {
+-#ifdef CONFIG_KSU_DEBUG
++#ifdef CONFIG_KSU_DIAGNOSTICS
+ 		ksu_diag_event("susfs supercall cmd=%u", cmd);
+ #endif

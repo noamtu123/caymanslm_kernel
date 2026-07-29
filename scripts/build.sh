@@ -96,6 +96,33 @@ if [ ${#fragments[@]} -gt 0 ]; then
   "${KMAKE[@]}" olddefconfig
 fi
 
+required_root_config=(
+  CONFIG_KSU
+  CONFIG_KSU_MANUAL_HOOK
+  CONFIG_KSU_SUSFS
+  CONFIG_KSU_SUSFS_SUS_PATH
+  CONFIG_KSU_SUSFS_SUS_MOUNT
+  CONFIG_KSU_SUSFS_SUS_KSTAT
+  CONFIG_KSU_SUSFS_SUS_MAP
+  CONFIG_KSU_SUSFS_OPEN_REDIRECT
+  CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+  CONFIG_SECURITY_DMESG_RESTRICT
+)
+for symbol in "${required_root_config[@]}"; do
+  if ! grep -qx "$symbol=y" "$KERNEL_OUT/.config"; then
+    echo "error: required root-stack option $symbol is not enabled" >&2
+    exit 1
+  fi
+done
+if ! grep -qx '# CONFIG_KSU_SUSFS_ENABLE_LOG is not set' "$KERNEL_OUT/.config"; then
+  echo "error: SuSFS logging must remain disabled in release builds" >&2
+  exit 1
+fi
+if ! grep -qx 'CONFIG_IKCONFIG_PROC=y' "$KERNEL_OUT/.config"; then
+  echo "error: /proc/config.gz is required for Android VINTF compatibility" >&2
+  exit 1
+fi
+
 # The Phase 1 correctness gate. If our standalone .config differs from the one
 # the known-good OrangeFox build produced, the recipe is wrong and every result
 # downstream of it is untrustworthy. Only meaningful with no fragments merged.

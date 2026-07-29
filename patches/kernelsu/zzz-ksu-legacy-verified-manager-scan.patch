@@ -1,0 +1,25 @@
+diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
+index 0000000..0000000 100644
+--- a/kernel/hook/setuid_hook.c
++++ b/kernel/hook/setuid_hook.c
+@@ -24,6 +24,7 @@
+ #include "setuid_hook.h"
+ #include "klog.h" // IWYU pragma: keep
+ #include "manager/manager_identity.h"
++#include "manager/throne_tracker.h"
+ #include "selinux/selinux.h"
+ #include "infra/seccomp_cache.h"
+ #include "supercall/supercall.h"
+@@ -64,3 +65,12 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+     pr_debug("handle_setresuid from %d to %d\n", old_uid, new_uid);
+ 
++    /*
++     * Manual-hook kernels cannot rely on a package-list fsnotify event at
++     * boot: an already-installed manager produces none.  Scan once when the
++     * first normal Zygote child is assigned its app UID; the scan verifies
++     * the APK's v2 certificate before recording any manager UID.
++     */
++    if (unlikely(!ksu_is_manager_appid_valid() && is_appuid(new_uid)))
++        track_throne(false);
++
+     if (unlikely(is_uid_manager(new_uid))) {

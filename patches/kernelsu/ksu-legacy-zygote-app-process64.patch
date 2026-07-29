@@ -1,0 +1,26 @@
+diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
+index 7b5a798..0000000 100644
+--- a/kernel/runtime/ksud_integration.c
++++ b/kernel/runtime/ksud_integration.c
+@@ -196,4 +196,7 @@
+ 	struct filename *filename;
+ 
+ 	static const char app_process[] = "/system/bin/app_process";
++	/* Android 12 may start Zygote using the architecture-specific binary. */
++	static const char app_process32[] = "/system/bin/app_process32";
++	static const char app_process64[] = "/system/bin/app_process64";
+ 	static bool first_zygote = true;
+@@ -280,8 +283,11 @@
+ 	}
+ 
+-	if (unlikely(first_zygote && !memcmp(filename->name, app_process,
+-			     sizeof(app_process) - 1) && argv)) {
++	if (unlikely(first_zygote &&
++		     (!memcmp(filename->name, app_process, sizeof(app_process) - 1) ||
++		      !memcmp(filename->name, app_process32, sizeof(app_process32) - 1) ||
++		      !memcmp(filename->name, app_process64, sizeof(app_process64) - 1)) &&
++		     argv)) {
+ 		char buf[16];
+ 		if (check_argv(*argv, 1, "-Xzygote", buf, sizeof(buf))) {
+ 			pr_info("exec zygote, /data prepared, second_stage: %d\n",
+ 				init_second_stage_executed);

@@ -1,0 +1,15 @@
+diff --git a/kernel/manager/throne_tracker.c b/kernel/manager/throne_tracker.c
+index b1d0bd0..d8467d1 100644
+--- a/kernel/manager/throne_tracker.c
++++ b/kernel/manager/throne_tracker.c
+@@ -270,10 +270,6 @@ static DEFINE_MUTEX(throne_tracker_mutex);
+ 
+ static bool do_track_throne_core(bool prune_only)
+ {
+-	if (is_lock_held(SYSTEM_PACKAGES_LIST_PATH)) {
+-		return false; // The file is blocked by Android, we ask for a retry
+-	}
+-
+ 	struct file *fp = ksu_filp_open_compat(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
+ 	if (IS_ERR(fp)) {
+ 		pr_info("throne_tracker: %s not ready yet: %ld\n", SYSTEM_PACKAGES_LIST_PATH, PTR_ERR(fp));

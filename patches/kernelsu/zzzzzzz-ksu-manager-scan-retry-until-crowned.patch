@@ -1,0 +1,20 @@
+diff --git a/kernel/manager/throne_tracker.c b/kernel/manager/throne_tracker.c
+index 0adbe76..42bc844 100644
+--- a/kernel/manager/throne_tracker.c
++++ b/kernel/manager/throne_tracker.c
+@@ -361,7 +361,14 @@ out:
+ 		kfree(np);
+ 	}
+ 
+-	return true; // success
++	/*
++	 * A completed directory walk is not necessarily a successful manager
++	 * discovery.  During Android boot, packages.list can temporarily lack
++	 * the manager entry even though its signed APK is already visible in
++	 * /data/app.  Keep the existing bounded worker retries alive until the
++	 * verified manager APK has actually been mapped to an app-id.
++	 */
++	return prune_only || ksu_is_manager_appid_valid();
+ }
+ 
+ // kworker

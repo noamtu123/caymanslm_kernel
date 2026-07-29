@@ -1,5 +1,27 @@
 # caymanslm_kernel — custom kernel for the LG Velvet 4G
 
+## Current implementation update (2026-07-28)
+
+The later v1.5.9 recommendation in this file is superseded. The requested
+Linux 5.10 → 4.9 backport is implemented and reproducibly packaged:
+
+- SuSFS `v2.2.0`, ShirkNeko `gki-android12-5.10` at
+  `c5723cc09c79b57a25f24212b8bfe6e255ea3eef`.
+- KernelSU Next `v3.2.0-legacy` at the existing pin `53791c92`, with a native
+  bridge for the v2.2 command API. The official KSUN manager remains accepted.
+- Enabled: `SUS_PATH`, `SUS_MOUNT`, `SUS_KSTAT`, `SUS_MAP`, open redirect,
+  cmdline spoof, uname spoof, AVC-log spoofing, and kallsyms filtering.
+- Kernel logging is deliberately compiled out.
+- `/proc/config.gz` is disabled because it would directly disclose all
+  `CONFIG_KSU*` and `CONFIG_KSU_SUSFS*` options to unprivileged detectors.
+- Unprivileged `dmesg` access is restricted; root remains able to collect logs
+  for bring-up and debugging.
+- The backport adapts the 5.10 namei, mount-ID/IDA, stat/getattr, fsnotify,
+  procfs, compat-getdents, remote-memory, and SELinux AVC interfaces to 4.9.
+- A clean patch replay and build are the reproducibility gate. On-device
+  behavior and detector testing remain separate gates; no root stack can
+  honestly guarantee zero detection.
+
 Custom Android kernel for the **LG Velvet 4G, LM-G910EMW** (`caymanslm`,
 Snapdragon 845), built from LineageOS kernel source, carrying **KernelSU Next**
 and **SuSFS**. Later: voltage / clock / thermal tuning and other additions.

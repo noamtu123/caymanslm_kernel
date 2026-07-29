@@ -1,0 +1,25 @@
+diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
+index 0000000..0000000 100644
+--- a/kernel/hook/setuid_hook.c
++++ b/kernel/hook/setuid_hook.c
+@@ -54,9 +54,8 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+     uid_t old_uid = current_uid().val;
+ 
+ #ifdef CONFIG_KSU_SUSFS
+-    if (!is_zygote(current_cred()))
+-        return 0;
++    bool is_zygote_child = is_zygote(current_cred());
+ 
+-    if (is_isolated_process(new_uid))
++    if (is_zygote_child && is_isolated_process(new_uid))
+         goto do_umount;
+ #endif
+@@ -90,5 +89,8 @@ int ksu_handle_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+     }
+ 
+ #ifdef CONFIG_KSU_SUSFS
++    if (!is_zygote_child)
++        return 0;
++
+     if (unlikely(new_uid == WEBVIEW_ZYGOTE_UID))
+         return 0;

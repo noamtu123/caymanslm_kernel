@@ -36,32 +36,14 @@ KSU_BRANCH="legacy"
 KSU_REF="53791c92bff13d62338f29cc9da035a37652ca91"   # 2026-07-20
 
 # ----------------------------------------------------------------- SuSFS ---
-# Kernel-side only, by decision: this repo produces a SuSFS-capable kernel; the
-# ksu_susfs tool and ksu_module_susfs hiding module are installed separately.
-#
-# ShirkNeko's fork, branch kernel-4.9, SUSFS v1.5.9 (2025-07-07).
-#
-# NOT simonpunk/kernel-4.9 (frozen 2025-02-23 at v1.5.5) and NOT the maintained
-# gki-* branches (v2.2.0). Reasoning, measured 2026-07-28:
-#
-#   - v1.5.9 is a 4.9-NATIVE kernel-side patch: 1992 lines, all version-specific
-#     logic already correct. Against our tree it needs ~30 problem lines of
-#     context fixing (LineageOS/LG 4.9 vs generic 4.9), mostly #include
-#     insertions -- shallow and mechanical.
-#   - the gki v2.2.0 alternative would mean backporting 2653 lines from 5.10
-#     with 8 LINUX_VERSION_CODE guards and fs/susfs.c grown 1200 -> 1468 lines.
-#     Strictly more work for features we do not need yet.
-#   - v1.5.9 also beats simonpunk's v1.5.5: newer, 38 vs 32 susfs_* symbols.
-#
-# Both halves still need hand-merging on the KernelSU side, because every
-# ready-made 4.9 patch targets the pre-2026 FLAT KernelSU layout
-# (kernel/core_hook.c, kernel/sucompat.c ...) and every maintained fork has
-# restructured. That cost is ~23 lines and is the same for every fork -- it is
-# not a reason to switch forks. See CLAUDE.md.
+# Kernel-side only: userspace policy/tooling remains a separately installed
+# module. This is ShirkNeko's maintained v2.2.0 source, backported from its
+# Android 12 / Linux 5.10 patch to this device's Linux 4.9.337 tree.
 SUSFS_URL="https://github.com/ShirkNeko/susfs4ksu"
-SUSFS_BRANCH="kernel-4.9"
-SUSFS_VERSION="v1.5.9"                # asserted in dmesg after flashing
-SUSFS_KERNEL_PATCH="50_add_susfs_in_kernel-4.9.patch"
+SUSFS_BRANCH="gki-android12-5.10"
+SUSFS_REF="c5723cc09c79b57a25f24212b8bfe6e255ea3eef"
+SUSFS_VERSION="v2.2.0"
+SUSFS_KERNEL_PATCH="caymanslm-susfs-v2.2.0-4.9-backport.patch"
 
 # ----------------------------------------------------------- AnyKernel3 ---
 ANYKERNEL_URL="https://github.com/osm0sis/AnyKernel3"
@@ -99,7 +81,10 @@ STOCK_BOOT_IMG="${STOCK_BOOT_IMG:-$SIBLING_REPO/artifacts/edl-backup/boot_b-stoc
 # Deliberately OUTSIDE the OrangeFox tree: patching ~/fox/kernel/lge/sdm845
 # would put KSU/SuSFS code into the tree the recovery builds from, and
 # `repo sync` would wipe it.
-WORKSPACE="${WORKSPACE:-$HOME/caymanslm-kernel}"
+# The active, reproducible SuSFS v2.2 replay tree.  Keeping this explicit
+# avoids silently building the older /home/.../caymanslm-kernel tree, whose
+# KernelSU/SuSFS integration is not the one being tested on the device.
+WORKSPACE="${WORKSPACE:-$HOME/caymanslm-kernel/susfs-v2-replay}"
 KERNEL_SRC="$WORKSPACE/src"
 KERNEL_OUT="$WORKSPACE/build"
 THIRD_PARTY="$WORKSPACE/third_party"

@@ -1,0 +1,31 @@
+diff --git a/kernel/Makefile b/kernel/Makefile
+index 43f052363ebe..46b34d5c65bd 100644
+--- a/kernel/Makefile
++++ b/kernel/Makefile
+@@ -119,10 +119,24 @@
+ $(obj)/configs.o: $(obj)/config_data.h
+ 
+ # config_data.h contains the same information as ikconfig.h but gzipped.
+-# Info from config_data can be extracted from /proc/config*
++# Info from config_data can be extracted from /proc/config.gz.  Android's
++# VINTF checker requires that endpoint on this device, so it must remain
++# available even in a production kernel.  Do not embed the raw build .config:
++# it would disclose the KSU/SuSFS integration to every reader of the endpoint.
++#
++# The embedded data is therefore a public, VINTF-compatible configuration view.
++# It retains every ordinary build option and omits only KSU's configuration
++# namespace.  KSU/SuSFS options affect neither VINTF's required configuration
++# checks nor the format of .config, and their absence from this public view
++# does not change their compiled runtime behavior.
++#
++# Keep this filtering at build time, rather than filtering reads in configs.c:
++# scripts/extract-ikconfig must see exactly what Android and userspace see.
++quiet_cmd_ikconfig = IKCFG   $@
++cmd_ikconfig = awk 'index($$0, "CONFIG_KSU") != 1 && index($$0, "CONFIG_KSU") != 3 { print }' $(KCONFIG_CONFIG) | gzip -n -f -9 > $@
+ targets += config_data.gz
+ $(obj)/config_data.gz: $(KCONFIG_CONFIG) FORCE
+-	$(call if_changed,gzip)
++	$(call if_changed,ikconfig)
+ 
+       filechk_ikconfiggz = (echo "static const char kernel_config_data[] __used = MAGIC_START"; cat $< | scripts/basic/bin2c; echo "MAGIC_END;")
+ targets += config_data.h
