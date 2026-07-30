@@ -21,7 +21,7 @@ index 43f052363ebe..46b34d5c65bd 100644
 +# Keep this filtering at build time, rather than filtering reads in configs.c:
 +# scripts/extract-ikconfig must see exactly what Android and userspace see.
 +quiet_cmd_ikconfig = IKCFG   $@
-+cmd_ikconfig = awk 'index($$0, "CONFIG_KSU") != 1 && index($$0, "CONFIG_KSU") != 3 { print }' $(KCONFIG_CONFIG) | gzip -n -f -9 > $@
++cmd_ikconfig = awk '!/CONFIG_KSU/ && !/KernelSU/ && !/SUSFS/ { print }' $(KCONFIG_CONFIG) | gzip -n -f -9 > $@
  targets += config_data.gz
  $(obj)/config_data.gz: $(KCONFIG_CONFIG) FORCE
 -	$(call if_changed,gzip)
