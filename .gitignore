@@ -10,3 +10,4 @@ prebuilt/
 *.swp
 .DS_Store
 Thumbs.db
+.work/
