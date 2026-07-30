@@ -162,7 +162,12 @@ setup_kernelsu() {
     zz-ksu-legacy-initial-manager-scan.patch
     zzz-ksu-legacy-verified-manager-scan.patch
     zzzzzzz-ksu-manager-scan-retry-until-crowned.patch
-    zzzzzzzz-ksu-manager-synchronous-setuid-discovery.patch
+    # zzzzzzzz-ksu-manager-synchronous-setuid-discovery.patch is deliberately
+    # NOT applied: it made the setresuid hook do a synchronous /data/app walk +
+    # packages.list read under a mutex on every app-uid spawn during the boot
+    # storm -- a risky pattern that cannot beat the FBE/ENOKEY wall anyway (the
+    # manager APK is unreadable until CE storage unlocks ~30-55s in). The async
+    # throne worker (retained, with scan-retry) still crowns at CE-unlock.
     zzzzzzzzz-ksu-manager-remove-spurious-dentry-lock-gate.patch
   )
   local ksu_patches=()
