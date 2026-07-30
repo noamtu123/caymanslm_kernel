@@ -1,0 +1,95 @@
+diff --git a/fs/namei.c b/fs/namei.c
+index 7eebd9f950a8..268a26992b25 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -51,6 +51,7 @@ extern const struct qstr susfs_fake_qstr_name;
+ #endif
+ #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+ extern struct filename *susfs_open_redirect_spoof_do_sys_openat(struct inode *inode);
++extern struct static_key_false susfs_is_open_redirect_enabled;
+ #endif
+ 
+ #define CREATE_TRACE_POINTS
+@@ -3834,18 +3835,20 @@ struct file *do_filp_open(int dfd, struct filename *pathname,
+ 	struct path redirect_probe;
+ 	int redirect_error;
+ 
+-	lookup_pathname = getname_kernel(pathname->name);
+-	if (!IS_ERR(lookup_pathname)) {
+-		redirect_error = filename_lookup(dfd, lookup_pathname, flags,
+-						 &redirect_probe, NULL);
+-		if (!redirect_error) {
+-			struct inode *inode =
+-				d_backing_inode(redirect_probe.dentry);
+-
+-			if (SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(inode))
+-				redirect_pathname =
+-					susfs_open_redirect_spoof_do_sys_openat(inode);
+-			path_put(&redirect_probe);
++	if (static_branch_unlikely(&susfs_is_open_redirect_enabled)) {
++		lookup_pathname = getname_kernel(pathname->name);
++		if (!IS_ERR(lookup_pathname)) {
++			redirect_error = filename_lookup(dfd, lookup_pathname, flags,
++							 &redirect_probe, NULL);
++			if (!redirect_error) {
++				struct inode *inode =
++					d_backing_inode(redirect_probe.dentry);
++
++				if (SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(inode))
++					redirect_pathname =
++						susfs_open_redirect_spoof_do_sys_openat(inode);
++				path_put(&redirect_probe);
++			}
+ 		}
+ 	}
+ 	if (redirect_pathname && !IS_ERR(redirect_pathname))
+diff --git a/fs/susfs.c b/fs/susfs.c
+index 09e223e236b0..10fe98f67a78 100644
+--- a/fs/susfs.c
++++ b/fs/susfs.c
+@@ -659,6 +659,8 @@ void susfs_set_uname(void __user **user_info) {
+ void susfs_spoof_uname(struct new_utsname* tmp) {
+ 	unsigned seq;
+ 
++	if (!static_branch_unlikely(&susfs_is_uname_spoof_buffer_set))
++		return;
+ 	do {
+ 		seq = read_seqbegin(&susfs_uname_seqlock);
+ 		strscpy(tmp->release, my_uname.release, __NEW_UTS_LEN);
+@@ -753,13 +755,18 @@ void susfs_set_cmdline_or_bootconfig(void __user **user_info) {
+ 	}
+ }
+ 
+-void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
++int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
+ 	unsigned seq;
+ 
++	if (!static_branch_unlikely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set))
++		return 1;
++	if (!fake_cmdline_or_bootconfig)
++		return 1;
+ 	do {
+ 		seq = read_seqbegin(&susfs_fake_cmdline_or_bootconfig_seqlock);
+ 		seq_puts(m, fake_cmdline_or_bootconfig);
+ 	} while (read_seqretry(&susfs_fake_cmdline_or_bootconfig_seqlock, seq));
++	return 0;
+ }
+ #endif
+ 
+@@ -768,6 +775,7 @@ void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
+ static DEFINE_MUTEX(susfs_mutex_lock_open_redirect);
+ static DEFINE_HASHTABLE(OPEN_REDIRECT_HLIST, 10);
+ DEFINE_SRCU(susfs_srcu_open_redirect);
++DEFINE_STATIC_KEY_FALSE(susfs_is_open_redirect_enabled);
+ 
+ void susfs_add_open_redirect(void __user **user_info) {
+ 	struct st_susfs_open_redirect info = {0};
+@@ -923,6 +931,8 @@ void susfs_add_open_redirect(void __user **user_info) {
+ out_path_put_redirected_path:
+ 	path_put(&redirected_path);
+ out_copy_to_user:
++	if (!info.err && !static_key_enabled(&susfs_is_open_redirect_enabled))
++		static_branch_enable(&susfs_is_open_redirect_enabled);
+ 	if (copy_to_user(&((struct st_susfs_open_redirect __user*)*user_info)->err, &info.err, sizeof(info.err))) {
+ 		info.err = -EFAULT;
+ 	}
