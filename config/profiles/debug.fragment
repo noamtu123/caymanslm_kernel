@@ -1,9 +1,27 @@
-# Diagnostic profile.  This is intentionally opt-in and does not alter the
-# release replay.  It keeps normal printk/audit flow and adds build symbols for
-# post-mortem analysis; private KSU diagnostics remain a separate explicit
-# source patch so they cannot leak into a release image by configuration alone.
+# Full diagnostic profile. Applied only with:
+#   ./scripts/build.sh --profile=debug
+#
+# It is deliberately noisy and disclosure-friendly for device bring-up.  Do
+# not ship it.  The release target remains config/profiles/release.fragment.
 
+CONFIG_PRINTK=y
+CONFIG_AUDIT=y
+CONFIG_KALLSYMS=y
+CONFIG_KALLSYMS_ALL=y
+CONFIG_KALLSYMS_BASE_RELATIVE=y
 CONFIG_DEBUG_INFO=y
+CONFIG_DEBUG_FS=y
+CONFIG_FTRACE=y
 CONFIG_PSTORE=y
 CONFIG_PSTORE_RAM=y
+CONFIG_PSTORE_CONSOLE=y
+CONFIG_PSTORE_PMSG=y
 CONFIG_SECURITY_DMESG_RESTRICT=y
+
+# Match the booting diagnostic control: leave dynamic debug, function tracing,
+# and the SuSFS-specific log switch off.  Normal KernelSU printk diagnostics
+# remain visible, while Kprobes stays disabled for the tested manual-hook path.
+# CONFIG_DYNAMIC_DEBUG is not set
+# CONFIG_FUNCTION_TRACER is not set
+# CONFIG_FUNCTION_GRAPH_TRACER is not set
+# CONFIG_KSU_SUSFS_ENABLE_LOG is not set
