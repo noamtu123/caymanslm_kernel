@@ -67,6 +67,21 @@ index 5d1ad6e452cdcc3aa50e80c4e8a0fa36cd69c376..ff8f940f4d2284b53607b97f9e0a15d3
 +	depends on KSU_SUSFS
 +	default y
 +
++config KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
++	bool "Automatically hide KernelSU default mounts"
++	depends on KSU_SUSFS && KSU_SUSFS_SUS_MOUNT
++	default y
++
++config KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
++	bool "Automatically hide suspicious bind mounts"
++	depends on KSU_SUSFS && KSU_SUSFS_SUS_MOUNT
++	default y
++
++config KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
++	bool "Automatically try unmounting bind mounts"
++	depends on KSU_SUSFS && KSU_SUSFS_SUS_MOUNT
++	default y
++
 +endmenu
 +
  endmenu
