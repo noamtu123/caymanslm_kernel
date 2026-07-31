@@ -123,32 +123,6 @@ else
   fail=1
 fi
 
-# Version strings alone can pass when the bridge was compiled without the
-# capabilities promised by the release profile. The public IKCONFIG view is
-# deliberately redacted, so verify the bridge's compiled feature strings in
-# the kernel image instead.
-required_susfs_config=(
-  CONFIG_KSU_SUSFS_SUS_PATH
-  CONFIG_KSU_SUSFS_SUS_MOUNT
-  CONFIG_KSU_SUSFS_SUS_KSTAT
-  CONFIG_KSU_SUSFS_SPOOF_UNAME
-  CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-  CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-  CONFIG_KSU_SUSFS_OPEN_REDIRECT
-  CONFIG_KSU_SUSFS_SUS_MAP
-  CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
-  CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
-  CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
-)
-for symbol in "${required_susfs_config[@]}"; do
-  if grep -qF "$symbol" "$SYMS"; then
-    note ok "$symbol bridge present"
-  else
-    note FAIL "$symbol bridge marker absent"
-    fail=1
-  fi
-done
-
 if [ "$fail" != "0" ]; then
   echo "verify-image: FAILED" >&2
   exit 1

@@ -169,7 +169,6 @@ setup_kernelsu() {
     # manager APK is unreadable until CE storage unlocks ~30-55s in). The async
     # throne worker (retained, with scan-retry) still crowns at CE-unlock.
     zzzzzzzzz-ksu-manager-remove-spurious-dentry-lock-gate.patch
-    zzzzzz-ksu-newfstatat-initrc-helper.patch
   )
   local ksu_patches=()
   local patch_name

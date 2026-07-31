@@ -40,12 +40,6 @@ Everything builds in WSL. There is no CI.
 ./scripts/package.sh       # -> artifacts/*.zip and a trial boot.img
 ```
 
-After booting a built image, run `./scripts/verify-root-stack.ps1` from
-PowerShell. It checks that the current boot executed KernelSU post-fs-data,
-that SuSFS exposes the complete configured feature set, and that activation
-markers are not stale. ReZygisk state is reported separately because its
-userspace module is not part of this repository.
-
 All upstream revisions live in [`pins.sh`](pins.sh). They are pinned by SHA and
 asserted after checkout — nothing floats.
 
