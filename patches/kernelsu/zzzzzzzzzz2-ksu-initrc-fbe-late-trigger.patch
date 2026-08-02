@@ -1,0 +1,50 @@
+Subject: [PATCH] kernelsu: run ksud again once /data is actually readable
+
+On this device /data is not accessible when init reaches the post-fs-data
+trigger, so the injected "exec ksud post-fs-data" cannot succeed and ksud
+never runs at boot. init hits the same wall on its own commands:
+
+  init: Top-level directory needs encryption action, eg mkdir /data/tombstones
+  init: Command 'mkdir /data/tombstones 0771 system system' action=post-fs-data
+        took 0ms and failed: lstat() failed on /data/tombstones: Permission denied
+
+and the kernel's own throne_tracker gets -126 (ENOKEY) on
+/data/system/packages.list at the same moment. Nothing module-related can
+run that early: no module post-fs-data.sh, no service.sh, and no zygiskd,
+which is why Zygisk modules report "Zygisk required" even with ReZygisk
+installed. A soft reboot re-runs the whole sequence once /data is readable,
+which is why it appears to fix everything.
+
+This is the legacy fscrypt v1 + Qualcomm PFK/ICE arrangement this device
+must keep, so the key cannot be made available earlier. Re-run ksud when
+vold reports user 0's storage as available instead.
+
+The existing post-fs-data trigger is deliberately kept rather than replaced:
+on a boot where /data IS ready in time it still does the right thing, and on
+this device it fails without side effects, so the later trigger is additive
+rather than a duplicate run.
+
+Note this cannot retroactively inject Zygisk into an already-running zygote;
+it starts zygiskd, but zygote may still need restarting for Zygisk modules to
+attach. That is the remaining known gap.
+
+---
+diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
+--- a/kernel/runtime/ksud_integration.c
++++ b/kernel/runtime/ksud_integration.c
+@@ -56,7 +56,15 @@ static const char KERNEL_SU_RC[] =
+ 	"on property:vold.decrypt=trigger_restart_framework\n"
+ 	"    exec u:r:" KERNEL_SU_DOMAIN ":s0 root -- " KSUD_PATH " services\n"
+ 	"\n"
+
++	// caymanslm: /data is unreadable at post-fs-data here, so the trigger
++	// above is too early for ksud to do anything. vold sets this once user
++	// 0's storage is usable.
++	"on property:sys.user.0.ce_available=true\n"
++	"    exec u:r:" KERNEL_SU_DOMAIN ":s0 root -- " KSUD_PATH " post-fs-data\n"
++	"    exec u:r:" KERNEL_SU_DOMAIN ":s0 root -- " KSUD_PATH " services\n"
++	"\n"
++
+ 	"on property:sys.boot_completed=1\n"
+ 	"    exec u:r:" KERNEL_SU_DOMAIN ":s0 root -- " KSUD_PATH " boot-completed\n"
+ 	"\n"
