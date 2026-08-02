@@ -30,7 +30,17 @@ supported.vendorpatchlevels=
 '; } # end properties
 
 # shell variables
-block=/dev/block/bootdevice/by-name/boot;
+#
+# Use the bare partition NAME, not a full path. A full path sends ak3-core.sh
+# down its `/dev/*` branch, which probes only that one location -- and
+# /dev/block/bootdevice is an Android-populated symlink that is not reliably
+# present in recovery, where this zip is actually flashed. There is no bare
+# `boot` node on this A/B device either (only boot_a -> sde11, boot_b -> sde32),
+# so that branch aborts with "Unable to determine ... partition".
+#
+# The bare name instead walks /dev/block/by-name, /dev/block/bootdevice/by-name
+# and both /dev/block/platform/*/by-name layouts, trying boot$SLOT before boot.
+block=boot;
 is_slot_device=1;
 ramdisk_compression=auto;
 patch_vbmeta_flag=auto;
