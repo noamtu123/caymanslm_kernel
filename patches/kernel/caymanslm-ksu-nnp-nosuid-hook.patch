@@ -1,0 +1,37 @@
+diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
+index 4abba0e1674d..004277998b4c 100644
+--- a/security/selinux/hooks.c
++++ b/security/selinux/hooks.c
+@@ -2314,6 +2314,11 @@ static u32 ptrace_parent_sid(struct task_struct *task)
+ 	return sid;
+ }
+ 
++#ifdef CONFIG_KSU
++extern bool is_ksu_transition(const struct task_security_struct *old_tsec,
++			const struct task_security_struct *new_tsec);
++#endif
++
+ static int check_nnp_nosuid(const struct linux_binprm *bprm,
+ 			    const struct task_security_struct *old_tsec,
+ 			    const struct task_security_struct *new_tsec)
+@@ -2328,6 +2333,20 @@ static int check_nnp_nosuid(const struct linux_binprm *bprm,
+ 	if (new_tsec->sid == old_tsec->sid)
+ 		return 0; /* No change in credentials */
+ 
++#ifdef CONFIG_KSU
++	/*
++	 * KernelSU: init execs /data/adb/ksud into the ksu domain, but /data is
++	 * mounted nosuid, so this path demands a bounded transition. The ksu
++	 * type is created at runtime and its type_datum is kzalloc'd, so
++	 * ->bounds is always 0 and security_bounded_transition() can never
++	 * succeed -- every ksud exec from init would fail with -EACCES and no
++	 * module would ever be mounted. KernelSU ships is_ksu_transition() for
++	 * exactly this case (guarded to <= 4.19); it permits only init -> ksu.
++	 */
++	if (is_ksu_transition(old_tsec, new_tsec))
++		return 0;
++#endif
++
+ 	/*
+ 	 * The only transitions we permit under NNP or nosuid
+ 	 * are transitions to bounded SIDs, i.e. SIDs that are

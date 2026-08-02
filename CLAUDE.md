@@ -89,12 +89,27 @@ regardless of fork, so switching forks buys nothing.
 - `legacy`'s Kconfig offers `KSU_MANUAL_HOOK` (defaults on when KPROBES absent)
   and `KSU_KPROBES_HOOK` (needs ≥5.10). Upstream docs write
   `CONFIG_KSU_KPROBE_HOOKS`, which matches nothing — **trust the Kconfig.**
-- **Six** hook sites (not five — `drivers/input/input.c` is needed for
+- **Seven** hook sites (not five — `drivers/input/input.c` is needed for
   volume-down safe mode): `ksu_handle_execveat` (`fs/exec.c` `do_execveat_common`),
   `ksu_handle_faccessat` (`fs/open.c`), `ksu_handle_stat` (`fs/stat.c`
   `newfstatat`), `ksu_handle_vfs_read` (`fs/read_write.c`),
   `ksu_handle_sys_reboot` (`kernel/reboot.c`),
-  `ksu_handle_input_handle_event` (`drivers/input/input.c`).
+  `ksu_handle_input_handle_event` (`drivers/input/input.c`), and
+  `is_ksu_transition` (`security/selinux/hooks.c` `check_nnp_nosuid`).
+- **The SELinux hook is the one that is easy to miss, and missing it is fatal
+  at boot** (found 2026-08-02, `caymanslm-ksu-nnp-nosuid-hook.patch`). `/data`
+  is mounted `nosuid`, so init's injected
+  `exec u:r:ksu:s0 root -- /data/adb/ksud …` goes through `check_nnp_nosuid()`,
+  which demands a *bounded* transition. `ksu` is created at runtime by
+  `add_type()`, whose `kzalloc`'d `type_datum` leaves `->bounds == 0`, so
+  `security_bounded_transition()` can never succeed and every ksud exec fails
+  with `-EACCES`. KernelSU ships `is_ksu_transition()` for exactly this (it is
+  `#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 19, 0)`, i.e. written for old
+  non-GKI trees) but declares it nowhere and calls it nowhere — the integrator
+  must wire it in. Unlike the other six, **the Kbuild hook gate does not catch
+  this one**: the build succeeds and root works, but no module ever mounts.
+  Symptom to recognise: `type=1401 … op=security_bounded_transition
+  seresult=denied oldcontext=u:r:init:s0 newcontext=u:r:ksu:s0`.
 - The reboot hook must sit **before** the `CAP_SYS_BOOT` check — KSU uses its
   own `magic1` and replies via `*arg` to a non-root manager.
 - `input.c` must **split** the `disposition` declaration rather than put a call
