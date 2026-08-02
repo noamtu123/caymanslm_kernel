@@ -1,0 +1,33 @@
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+index b818410d2418..72161f5a7c05 100644
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -76,7 +76,27 @@ int selinux_policycap_netpeer;
+ int selinux_policycap_openperm;
+ int selinux_policycap_alwaysnetwork;
+ 
+-static DEFINE_RWLOCK(policy_rwlock);
++/*
++ * KernelSU applies its SELinux rules by editing this policydb in place.
++ * Its Kbuild probes for a NON-static definition here:
++ *
++ *   ifeq ($(shell grep -q "^DEFINE_RWLOCK(policy_rwlock);" ...))
++ *       ccflags-y += -DKSU_COMPAT_HAS_EXPORTED_POLICY_RWLOCK
++ *
++ * With that macro, ksu_get_policy_rwlock() returns this lock and
++ * apply_kernelsu_rules() takes write_lock() + preempt_enable(), which is
++ * the path it is designed for: the thousands of GFP_KERNEL avtab/type
++ * allocations it performs are allowed to sleep.
++ *
++ * Left static, the macro is undefined, ksu_get_policy_rwlock() returns
++ * NULL and the code falls back to stop_machine() -- every CPU halted with
++ * IRQs off, where those same GFP_KERNEL allocations may not sleep. They
++ * then fail silently and partially, so the ksu domain gets only SOME of
++ * its allow rules, nondeterministically, boot to boot. Newer kernels never
++ * hit this: >=5.10 duplicates the policy and RCU-swaps it, and trees with
++ * selinux_state use selinux_state.ss->policy_rwlock.
++ */
++DEFINE_RWLOCK(policy_rwlock);
+ 
+ static struct sidtab sidtab;
+ struct policydb policydb;
