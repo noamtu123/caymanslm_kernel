@@ -170,7 +170,21 @@ setup_kernelsu() {
     # throne worker (retained, with scan-retry) still crowns at CE-unlock.
     zzzzzzzzz-ksu-manager-remove-spurious-dentry-lock-gate.patch
     zzzzzz-ksu-newfstatat-initrc-helper.patch
-    zzzzzzzzzz2-ksu-initrc-fbe-late-trigger.patch
+    # zzzzzzzzzz2-ksu-initrc-fbe-late-trigger.patch is deliberately NOT applied
+    # any more (dropped 2026-08-02). It added a second
+    # `on property:sys.user.0.ce_available=true` trigger firing another
+    # `ksud post-fs-data` + `services`, on the premise that /data was
+    # unreadable at the real post-fs-data trigger. That premise was wrong: the
+    # real trigger was failing on the init->ksu SELinux transition, fixed by
+    # patches/kernel/caymanslm-ksu-nnp-nosuid-hook.patch. With that hook in
+    # place init's `on post-fs-data` runs ksud successfully at ~9s
+    # (`exec … /data/adb/ksud post-fs-data` exits status 0), so the late
+    # trigger is now a pure DUPLICATE run and actively breaks modules: it
+    # re-executes every module's post-fs-data.sh after boot, and ReZygisk's
+    # starts with `rm -rf /data/adb/rezygisk`, unlinking the sockets its
+    # already-running daemon is bound to. Symptom: every app logs
+    # `zygisk-core64: connection to ReZygiskd failed with 2` and ReZygisk
+    # reports "Multiple Zygisks functioning".
   )
   local ksu_patches=()
   local patch_name
