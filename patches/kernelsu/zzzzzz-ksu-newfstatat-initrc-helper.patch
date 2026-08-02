@@ -18,7 +18,7 @@ copy is safe here.
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
 --- a/kernel/runtime/ksud_integration.c
 +++ b/kernel/runtime/ksud_integration.c
-@@ -828,6 +828,56 @@ void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr)
+@@ -828,6 +828,58 @@ void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr)
  	ksu_common_newfstat_ret(*fd, (void **)statbuf_ptr, STAT_NATIVE, "sys_newfstat");
  }
 
@@ -27,7 +27,6 @@ diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration
 +			struct stat __user **statbuf_ptr)
 +{
 +	char *path;
-+	const char *base;
 +	void __user *statbuf;
 +	void __user *st_size_ptr;
 +	long size, new_size;
@@ -50,11 +49,14 @@ diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration
 +		goto out;
 +	path[PATH_MAX - 1] = '\0';
 +
-+	/* is_init_rc() matches the basename, not an absolute path: on Android 12
-+	 * init.rc is /system/etc/init/hw/init.rc. */
-+	base = strrchr(path, '/');
-+	base = base ? base + 1 : path;
-+	if (strcmp(base, "init.rc"))
++	/* Match the real init.rc only. is_init_rc() compares just the basename,
++	 * but it is reached through an already-open fd and so never sees the
++	 * per-APEX etc/init.rc files. This hook takes a pathname and does see
++	 * them, and inflating their reported size makes init read past the end
++	 * of files that have nothing to do with ksud. On Android 12 the real one
++	 * is /system/etc/init/hw/init.rc; /init.rc is kept for older layouts. */
++	if (strcmp(path, "/system/etc/init/hw/init.rc") &&
++			strcmp(path, "/init.rc"))
 +		goto out;
 +
 +	pr_info("sys_newfstatat: stat init.rc \n");
