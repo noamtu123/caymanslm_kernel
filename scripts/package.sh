@@ -79,6 +79,24 @@ rm -f "$ZIP"
 ( cd "$AK3" && zip -qr9 "$ZIP" . -x '.git/*' '.github/*' 'README.md' )
 [ -f "$ZIP" ] || { echo "error: zip was not produced" >&2; exit 1; }
 
+# The install variables must be spelled the way the BUNDLED ak3-core.sh reads
+# them. This base reads BLOCK/IS_SLOT_DEVICE; older ones read block/is_slot_device
+# and nothing maps between the two. A mismatch is silent at package time and only
+# shows up on the phone as "Unable to determine  partition" -- the doubled space
+# being an empty $BLOCK. Assert the spelling the shipped core actually consumes.
+for var in BLOCK IS_SLOT_DEVICE; do
+  if ! grep -qE "^${var}=" "$AK3/anykernel.sh"; then
+    echo "error: anykernel.sh does not set $var (lowercase spelling is not read" >&2
+    echo "       by the bundled tools/ak3-core.sh and installs will abort)" >&2
+    exit 1
+  fi
+  grep -q "\$$var" "$AK3/tools/ak3-core.sh" || {
+    echo "error: bundled ak3-core.sh never reads \$$var -- AnyKernel base changed" >&2
+    echo "       its variable convention; re-check anykernel.sh against it" >&2
+    exit 1
+  }
+done
+
 # ---------------------------------------------------------- trial image ---
 "$HERE/scripts/mkboot.sh" "$ARTIFACTS/boot-trial.img"
 

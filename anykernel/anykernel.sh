@@ -31,19 +31,24 @@ supported.vendorpatchlevels=
 
 # shell variables
 #
-# Use the bare partition NAME, not a full path. A full path sends ak3-core.sh
-# down its `/dev/*` branch, which probes only that one location -- and
-# /dev/block/bootdevice is an Android-populated symlink that is not reliably
-# present in recovery, where this zip is actually flashed. There is no bare
-# `boot` node on this A/B device either (only boot_a -> sde11, boot_b -> sde32),
-# so that branch aborts with "Unable to determine ... partition".
+# UPPERCASE, and that is not cosmetic. This AnyKernel base (AK_BASE_VERSION
+# 20260704) reads BLOCK / IS_SLOT_DEVICE / RAMDISK_COMPRESSION /
+# PATCH_VBMETA_FLAG directly; nothing maps the older lowercase spellings onto
+# them. With lowercase names every one of these is empty at install time, and
+# the flash dies as "Unable to determine  partition" -- note the doubled space
+# where the empty $BLOCK expanded. Check tools/ak3-core.sh before renaming.
 #
-# The bare name instead walks /dev/block/by-name, /dev/block/bootdevice/by-name
-# and both /dev/block/platform/*/by-name layouts, trying boot$SLOT before boot.
-block=boot;
-is_slot_device=1;
-ramdisk_compression=auto;
-patch_vbmeta_flag=auto;
+# Bare partition NAME, not a full path: ak3-core.sh's fallback branch walks
+# /dev/block/by-name, /dev/block/bootdevice/by-name and both
+# /dev/block/platform/*/by-name layouts, trying boot$SLOT before boot. A full
+# path would instead probe one hardcoded location, and /dev/block/bootdevice is
+# populated by Android's ueventd -- not reliably present in recovery, which is
+# where this zip is actually flashed. This device has no bare `boot` node
+# either, only boot_a -> sde11 and boot_b -> sde32.
+BLOCK=boot;
+IS_SLOT_DEVICE=1;
+RAMDISK_COMPRESSION=auto;
+PATCH_VBMETA_FLAG=auto;
 
 # import the AnyKernel install methods
 . tools/ak3-core.sh;
