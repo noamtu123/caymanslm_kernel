@@ -1,0 +1,77 @@
+Subject: [PATCH] kernelsu: add newfstatat init.rc helper
+
+Android init on this 4.9 arm64 target stats init.rc by pathname, which lands
+in newfstatat. The existing ksu_handle_newfstat_ret hook cannot see that path
+because newfstat receives an already-open file descriptor, so ksud's appended
+service definitions were never picked up on a cold boot and modules only
+activated after a soft reboot.
+
+Match the basename rather than a fixed absolute path: is_init_rc() (the proven
+in-tree matcher used by the fd-based hooks) compares dentry->d_name.name to
+"init.rc", and on Android 12 the file lives at /system/etc/init/hw/init.rc.
+
+Use strncpy_from_user(); strncpy_from_user_nofault() does not exist before 5.8.
+The hook runs in ordinary syscall context, not atomic context, so a faulting
+copy is safe here.
+
+---
+diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
+--- a/kernel/runtime/ksud_integration.c
++++ b/kernel/runtime/ksud_integration.c
+@@ -828,6 +828,56 @@ void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr)
+ 	ksu_common_newfstat_ret(*fd, (void **)statbuf_ptr, STAT_NATIVE, "sys_newfstat");
+ }
+
++__attribute__((cold))
++void ksu_handle_newfstatat_ret(const char __user **filename_user,
++			struct stat __user **statbuf_ptr)
++{
++	char *path;
++	const char *base;
++	void __user *statbuf;
++	void __user *st_size_ptr;
++	long size, new_size;
++
++	if (likely(!ksu_vfs_read_hook))
++		return;
++
++	/* Cheap gates first: this runs on every newfstatat in the system. */
++	if (!is_init(current_cred()) || strcmp(current->comm, "init"))
++		return;
++
++	if (!filename_user || !*filename_user || !statbuf_ptr || !*statbuf_ptr)
++		return;
++
++	path = kmalloc(PATH_MAX, GFP_KERNEL);
++	if (!path)
++		return;
++
++	if (strncpy_from_user(path, *filename_user, PATH_MAX) < 0)
++		goto out;
++	path[PATH_MAX - 1] = '\0';
++
++	/* is_init_rc() matches the basename, not an absolute path: on Android 12
++	 * init.rc is /system/etc/init/hw/init.rc. */
++	base = strrchr(path, '/');
++	base = base ? base + 1 : path;
++	if (strcmp(base, "init.rc"))
++		goto out;
++
++	pr_info("sys_newfstatat: stat init.rc \n");
++
++	statbuf = (void __user *)*statbuf_ptr;
++	st_size_ptr = statbuf + offsetof(struct stat, st_size);
++
++	if (copy_from_user(&size, st_size_ptr, sizeof(long)))
++		goto out;
++
++	new_size = size + ksu_rc_len;
++	if (!copy_to_user(st_size_ptr, &new_size, sizeof(long)))
++		pr_info("sys_newfstatat: added ksu_rc_len: %ld -> %ld \n", size, new_size);
++out:
++	kfree(path);
++}
++
+ #if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
+ void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr)
+ {
