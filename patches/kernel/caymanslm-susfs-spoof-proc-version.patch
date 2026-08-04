@@ -1,0 +1,43 @@
+diff --git a/fs/proc/version.c b/fs/proc/version.c
+index d2154eb6d78f..504271995c44 100644
+--- a/fs/proc/version.c
++++ b/fs/proc/version.c
+@@ -3,14 +3,35 @@
+ #include <linux/kernel.h>
+ #include <linux/proc_fs.h>
+ #include <linux/seq_file.h>
++#include <linux/string.h>
+ #include <linux/utsname.h>
+ 
++#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++/* Forward-declared rather than pulling in susfs.h, matching how
++ * kernel/sys.c's newuname() already calls this. */
++extern void susfs_spoof_uname(struct new_utsname *tmp);
++#endif
++
++/* /proc/version is world-readable and, unlike the uname() syscall, was not
++ * routed through CONFIG_KSU_SUSFS_SPOOF_UNAME: it read utsname() directly, so
++ * any app could see the real release/version strings regardless of whatever
++ * the susfs4ksu module had set via CMD_SUSFS_SET_UNAME. Apply the same spoof
++ * here so both surfaces agree. */
+ static int version_proc_show(struct seq_file *m, void *v)
+ {
++	struct new_utsname tmp;
++
++	down_read(&uts_sem);
++	memcpy(&tmp, utsname(), sizeof(tmp));
++#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++	susfs_spoof_uname(&tmp);
++#endif
++	up_read(&uts_sem);
++
+ 	seq_printf(m, linux_proc_banner,
+-		utsname()->sysname,
+-		utsname()->release,
+-		utsname()->version);
++		tmp.sysname,
++		tmp.release,
++		tmp.version);
+ 	return 0;
+ }
+ 

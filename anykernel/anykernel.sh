@@ -15,7 +15,7 @@
 # Lineage-sourced kernel boot LG stock at all.
 
 properties() { '
-kernel.string=caymanslm custom kernel (KernelSU Next + SuSFS) by noamtu123
+kernel.string=caymanslm_Wraith_v1.0-KernelSU-Next-SUSFS
 do.devicecheck=1
 do.initd=0
 do.kernel=1

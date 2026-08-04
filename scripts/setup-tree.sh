@@ -80,6 +80,14 @@ if [ "$KVER" != "4.9.337" ]; then
 fi
 echo "  version $KVER"
 
+# scripts/setlocalversion checks for this file BEFORE it checks git-dirty
+# state, and uses its content verbatim as the version suffix. Without it, the
+# tree's uncommitted patches make git report dirty, which appends a trailing
+# "+" to `uname -r` (see CLAUDE.md) -- a tell that this is not a stock build,
+# and re-created here on every setup since --clean's `git clean` removes it.
+: > "$KERNEL_SRC/.scmversion"
+echo "  wrote empty .scmversion (suppresses the dirty-tree '+' suffix)"
+
 # ----------------------------------------------------------------- patches ---
 # Same check / reverse-check / fail contract as the sibling repo's
 # apply-fixes.sh, so a partially-patched tree is never mistaken for a clean one.

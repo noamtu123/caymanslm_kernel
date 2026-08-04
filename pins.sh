@@ -96,8 +96,17 @@ DEVICE="caymanslm"
 
 # Build identity, so `uname -a` proves which build is actually running. The
 # recovery project lost many cycles to a flash that silently did not take.
-KBUILD_USER="noamtu123"
-KBUILD_HOST="caymanslm-kernel"
+#
+# This is compiled into `(LINUX_COMPILE_BY@LINUX_COMPILE_HOST)` in
+# init/version.c and shows up verbatim in /proc/version, which is
+# world-readable -- CONFIG_KSU_SUSFS_SPOOF_UNAME does NOT cover it (it only
+# rewrites the newuname() syscall's utsname, not the compile-time banner). A
+# release build must not identify the operator, so this is generic rather than
+# stock-mimicking impersonation. Dev builds are unaffected: `uname -a` is still
+# how a flash is confirmed to have taken, it just proves "our build" via the
+# release string set in scripts/build.sh (--release-string) instead of a name.
+KBUILD_USER="build"
+KBUILD_HOST="localhost"
 
 # Present only in an EDL-capable kernel. Asserted on every built artifact --
 # the same marker patch-android-edl-boot.ps1 uses. If this string is missing,
