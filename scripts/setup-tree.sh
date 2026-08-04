@@ -185,6 +185,23 @@ setup_kernelsu() {
     # already-running daemon is bound to. Symptom: every app logs
     # `zygisk-core64: connection to ReZygiskd failed with 2` and ReZygisk
     # reports "Multiple Zygisks functioning".
+    #
+    # Must come last: it rewrites the apply_kernelsu_rules() lock region that
+    # the earlier sepolicy patches also touch.
+    #
+    # apply_kernelsu_rules() injected its rules while holding policy_rwlock for
+    # WRITE with preempt_enable() and the task pinned to a single CPU, so the
+    # rule path's GFP_KERNEL allocations could sleep. policy_rwlock is a
+    # spinning lock whose readers include security_compute_av() -- every SELinux
+    # permission check on the system -- and they spin with preemption disabled.
+    # Once the writer went off-CPU (reclaim or preemption) and any reader landed
+    # on the one CPU it had pinned itself to, the writer could never be
+    # scheduled again: permanent deadlock, ~1 boot in 5. Measured signature was
+    # PID 1 parked in ptrace_stop while ReZygisk's ptrace monitor sat in state R
+    # at 80% system time until a hard reset. Pairs with
+    # patches/kernel/caymanslm-selinux-policydb-atomic-alloc.patch, which adds
+    # the ksu_policydb_gfp knob this switches to GFP_ATOMIC.
+    zzzzzzzzzzz-ksu-sepolicy-no-sleep-under-policy-rwlock.patch
   )
   local ksu_patches=()
   local patch_name

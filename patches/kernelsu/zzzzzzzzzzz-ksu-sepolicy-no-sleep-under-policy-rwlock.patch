@@ -1,0 +1,454 @@
+diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
+index 25e813a5..db0401c4 100644
+--- a/kernel/selinux/rules.c
++++ b/kernel/selinux/rules.c
+@@ -1,3 +1,6 @@
++#include <linux/gfp.h>
++extern gfp_t ksu_policydb_gfp;
++
+ #include "linux/rcupdate.h"
+ #include "security.h"
+ #include <linux/uaccess.h>
+@@ -83,12 +86,6 @@ static inline rwlock_t *ksu_get_policy_rwlock(void) { extern rwlock_t policy_rwl
+ static inline rwlock_t *ksu_get_policy_rwlock(void) { return NULL; }
+ #endif
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0) || defined(KSU_COMPAT_HAS_BACKPORTED_CPUS_PTR)
+-static inline const cpumask_t *ksu_get_current_cpumask_t() { return current->cpus_ptr; }
+-#else
+-static inline cpumask_t *ksu_get_current_cpumask_t() { return &current->cpus_allowed; }
+-#endif
+-
+ #endif // #ifndef SELINUX_POLICY_INSTEAD_SELINUX_SS
+ 
+ static int apply_kernelsu_rules_fn(void *ptr)
+@@ -221,52 +218,48 @@ out_unlock:
+ 	mutex_unlock(&selinux_state.policy_mutex);
+ #else
+ 
+-	cpumask_t old_mask;
+ 	db = get_policydb();
+ 	rwlock_t *lock = ksu_get_policy_rwlock();
+-	
++
+ 	if (!lock)
+ 		goto do_stop_machine;
+ 
+ 	/*
+-	 * HACK: write_lock() is held with preempt enabled. DO NOT let the
+-	 * task be migrated to any other CPU than the current CPU. And since
+-	 * set_cpus_allowed_ptr() can sleep, use raw_smp_processor_id() to get
+-	 * current CPU and bypass preemption checks.
++	 * policy_rwlock is a SPINNING reader/writer lock.  While it is held for
++	 * write, every reader spins with preemption disabled -- and the readers
++	 * include security_compute_av(), i.e. every SELinux permission check on
++	 * the system.  Nothing in this critical section may sleep.
++	 *
++	 * The previous form held the lock with preempt_enable() and pinned the
++	 * task to one CPU so the rule path's GFP_KERNEL allocations could sleep.
++	 * On this device that is a permanent deadlock, not a stall: once the
++	 * writer goes off-CPU (direct reclaim, or simply preemption) and any
++	 * reader lands on the single CPU it pinned itself to, the writer can
++	 * never be scheduled again and every reader spins forever.
++	 *
++	 * Observed before this change: PID 1 parked in ptrace_stop while
++	 * ReZygisk's ptrace monitor sat in state R burning 80% system time,
++	 * unrecoverable without a hard reset, on roughly one boot in five.
++	 *
++	 * ksu_policydb_gfp switches the rule path to GFP_ATOMIC for the duration,
++	 * so the section is genuinely atomic and the lock keeps normal semantics.
+ 	 */
+-	cpumask_copy(&old_mask, ksu_get_current_cpumask_t());
+-	set_cpus_allowed_ptr(current, cpumask_of(raw_smp_processor_id()));
+-
++	ksu_policydb_gfp = GFP_ATOMIC;
+ 	write_lock(lock);
+-	preempt_enable();
+-
+-    // we do this dance since both kernel and userspace can trigger this
+-	if (likely(current && current->mm))
+-		goto has_current_mm;
+-
+ 	apply_kernelsu_rules_fn((void *)db);
+-	goto out_unlock;
+-
+-has_current_mm:
+-	;
+-
+-    // HACK: raise priority of this to the heavens
+-	int old_policy = current->policy;
+-	struct sched_param old_param = { .sched_priority = current->rt_priority };
+-	struct sched_param new_param = { .sched_priority = 50 };
+-
+-	sched_setscheduler_nocheck(current, 1, &new_param); // raise, fifo, 50
+-	apply_kernelsu_rules_fn((void *)db);
+-	sched_setscheduler_nocheck(current, old_policy, &old_param); // restore
+-
+-out_unlock:
+-	preempt_disable();
+ 	write_unlock(lock);
+-	set_cpus_allowed_ptr(current, &old_mask);
++	ksu_policydb_gfp = GFP_KERNEL;
+ 	goto out_flush;
+ 
+ do_stop_machine:
++	/*
++	 * stop_machine() runs the callback with interrupts off on every CPU, so
++	 * it cannot sleep either -- the same GFP_ATOMIC requirement applies.
++	 * Getting this wrong here is what produced partially-applied rulesets.
++	 */
++	ksu_policydb_gfp = GFP_ATOMIC;
+ 	stop_machine(apply_kernelsu_rules_fn, (void *)db, NULL);
++	ksu_policydb_gfp = GFP_KERNEL;
+ 
+ out_flush:
+ 	smp_mb();
+@@ -719,7 +712,6 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
+ 	u8 *payload;
+ 	int ret = 0;
+ 	int success_cmd_count = 0;
+-	cpumask_t old_mask;
+ 
+ 	if (!user_data || !data_len)
+ 		return -EINVAL;
+@@ -750,42 +742,24 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
+ 		goto do_stop_machine;
+ 
+ 	/*
+-	 * HACK: write_lock() is held with preempt enabled. DO NOT let the
+-	 * task be migrated to any other CPU than the current CPU. And since
+-	 * set_cpus_allowed_ptr() can sleep, use raw_smp_processor_id() to get
+-	 * current CPU and bypass preemption checks.
++	 * Same constraint as apply_kernelsu_rules(): policy_rwlock is a spinning
++	 * lock whose readers include every SELinux permission check on the
++	 * system, so nothing in this section may sleep.  This path is driven by
++	 * ksud applying each module's sepolicy.rule at post-fs-data -- the exact
++	 * window the boot hang lands in -- so it matters at least as much as the
++	 * built-in ruleset.
+ 	 */
+-	cpumask_copy(&old_mask, ksu_get_current_cpumask_t());
+-	set_cpus_allowed_ptr(current, cpumask_of(raw_smp_processor_id()));
+-
++	ksu_policydb_gfp = GFP_ATOMIC;
+ 	write_lock(lock);
+-	preempt_enable();
+-
+-	if (likely(current && current->mm))
+-		goto has_current_mm;
+-
+ 	ret = handle_sepolicy_fn((void *)&ctx);
+-	goto out_unlock;
+-
+-has_current_mm:
+-	;
+-
+-	int old_policy = current->policy;
+-	struct sched_param old_param = { .sched_priority = current->rt_priority };
+-	struct sched_param new_param = { .sched_priority = 50 };
+-
+-	sched_setscheduler_nocheck(current, 1, &new_param);
+-	ret = handle_sepolicy_fn((void *)&ctx);
+-	sched_setscheduler_nocheck(current, old_policy, &old_param);
+-
+-out_unlock:
+-	preempt_disable();
+ 	write_unlock(lock);
+-	set_cpus_allowed_ptr(current, &old_mask);
++	ksu_policydb_gfp = GFP_KERNEL;
+ 	goto out_done;
+ 
+ do_stop_machine:
++	ksu_policydb_gfp = GFP_ATOMIC;
+ 	ret = stop_machine(handle_sepolicy_fn, (void *)&ctx, NULL);
++	ksu_policydb_gfp = GFP_KERNEL;
+ 
+ out_done:
+ 	if (ret)
+diff --git a/kernel/selinux/sepolicy.c b/kernel/selinux/sepolicy.c
+index 09b6579e..cf58e435 100644
+--- a/kernel/selinux/sepolicy.c
++++ b/kernel/selinux/sepolicy.c
+@@ -1,3 +1,6 @@
++#include <linux/gfp.h>
++extern gfp_t ksu_policydb_gfp;
++
+ #include "ss/avtab.h"
+ #include "ss/constraint.h"
+ #include "ss/ebitmap.h"
+@@ -346,7 +349,7 @@ static void add_xperm_rule_raw(struct policydb *db, struct type_datum *src,
+ 
+         if (datum->u.xperms == NULL) {
+             datum->u.xperms = (struct avtab_extended_perms *)(kzalloc(
+-                sizeof(xperms), GFP_KERNEL));
++                sizeof(xperms), ksu_policydb_gfp));
+             if (!datum->u.xperms) {
+                 pr_err("alloc xperms failed\n");
+                 return;
+@@ -541,11 +544,11 @@ static bool add_filename_trans(struct policydb *db, const char *s,
+ 
+     if (trans == NULL) {
+         trans = (struct filename_trans_datum *)kcalloc(1, sizeof(*trans),
+-                                                       GFP_KERNEL);
++                                                       ksu_policydb_gfp);
+ 		struct filename_trans_key *new_key =
+-			(struct filename_trans_key *)kzalloc(sizeof(*new_key), GFP_KERNEL);
++			(struct filename_trans_key *)kzalloc(sizeof(*new_key), ksu_policydb_gfp);
+ 		*new_key = key;
+-		new_key->name = kstrdup(key.name, GFP_KERNEL);
++		new_key->name = kstrdup(key.name, ksu_policydb_gfp);
+ 		trans->next = last;
+ 		trans->otype = def->value;
+ 		hashtab_insert(&db->filename_trans, new_key, trans,
+@@ -565,19 +568,19 @@ static bool add_filename_trans(struct policydb *db, const char *s,
+ 
+ 	if (trans == NULL) {
+ 		trans = (struct filename_trans_datum *)kcalloc(sizeof(*trans), 1,
+-                                                       GFP_KERNEL);
++                                                       ksu_policydb_gfp);
+ 		if (!trans) {
+ 			pr_err("add_filename_trans: Failed to alloc datum\n");
+ 			return false;
+ 		}
+ 		struct filename_trans *new_key =
+-			(struct filename_trans *)kzalloc(sizeof(*new_key), GFP_KERNEL);
++			(struct filename_trans *)kzalloc(sizeof(*new_key), ksu_policydb_gfp);
+ 		if (!new_key) {
+ 			pr_err("add_filename_trans: Failed to alloc new_key\n");
+ 			return false;
+ 		}
+ 		*new_key = key;
+-		new_key->name = kstrdup(key.name, GFP_KERNEL);
++		new_key->name = kstrdup(key.name, ksu_policydb_gfp);
+ 		trans->otype = def->value;
+ 		hashtab_insert(db->filename_trans, new_key, trans);
+ 	}
+@@ -594,10 +597,10 @@ static bool add_genfscon(struct policydb *db, const char *fs_name,
+ 
+ // https://github.com/torvalds/linux/commit/590b9d576caec6b4c46bba49ed36223a399c3fc5#diff-cc9aa90e094e6e0f47bd7300db4f33cf4366b98b55d8753744f31eb69c691016R844-R845
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
+-#define ksu_kvrealloc(p, new_size, _old_size) kvrealloc(p, new_size, GFP_KERNEL)
++#define ksu_kvrealloc(p, new_size, _old_size) kvrealloc(p, new_size, ksu_policydb_gfp)
+ #else
+ #define ksu_kvrealloc(p, new_size, old_size)                                   \
+-	ksu_compat_kvrealloc(p, old_size, new_size, GFP_KERNEL)
++	ksu_compat_kvrealloc(p, old_size, new_size, ksu_policydb_gfp)
+ #endif
+ 
+ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+@@ -609,7 +612,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+     }
+ 
+     u32 value = ++db->p_types.nprim;
+-    type = (struct type_datum *)kzalloc(sizeof(struct type_datum), GFP_KERNEL);
++    type = (struct type_datum *)kzalloc(sizeof(struct type_datum), ksu_policydb_gfp);
+     if (!type) {
+         pr_err("add_type: alloc type_datum failed.\n");
+         return false;
+@@ -619,7 +622,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+     type->value = value;
+     type->attribute = attr;
+ 
+-    char *key = kstrdup(type_name, GFP_KERNEL);
++    char *key = kstrdup(type_name, ksu_policydb_gfp);
+     if (!key) {
+         pr_err("add_type: alloc key failed.\n");
+         return false;
+@@ -682,12 +685,12 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+    */
+ 	size_t new_size = sizeof(struct ebitmap) * db->p_types.nprim;
+ 	struct ebitmap *new_type_attr_map =
+-		(krealloc(db->type_attr_map, new_size, GFP_KERNEL));
++		(krealloc(db->type_attr_map, new_size, ksu_policydb_gfp));
+ 
+ 	struct type_datum **new_type_val_to_struct =
+ 		krealloc(db->type_val_to_struct,
+ 			 sizeof(*db->type_val_to_struct) * db->p_types.nprim,
+-			 GFP_KERNEL);
++			 ksu_policydb_gfp);
+ 
+ 	if (!new_type_attr_map) {
+ 		pr_err("add_type: alloc type_attr_map failed\n");
+@@ -702,7 +705,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+ 	char **new_val_to_name_types =
+ 		krealloc(db->sym_val_to_name[SYM_TYPES],
+ 			 sizeof(char *) * db->symtab[SYM_TYPES].nprim,
+-			 GFP_KERNEL);
++			 ksu_policydb_gfp);
+ 	if (!new_val_to_name_types) {
+ 		pr_err("add_type: alloc val_to_name failed\n");
+ 		return false;
+@@ -729,15 +732,15 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+ 	// flex_array is not extensible, we need to create a new bigger one instead
+ 	struct flex_array *new_type_attr_map_array =
+ 		flex_array_alloc(sizeof(struct ebitmap), db->p_types.nprim,
+-				 GFP_KERNEL | __GFP_ZERO);
++				 ksu_policydb_gfp | __GFP_ZERO);
+ 
+ 	struct flex_array *new_type_val_to_struct =
+ 		flex_array_alloc(sizeof(struct type_datum *), db->p_types.nprim,
+-				 GFP_KERNEL | __GFP_ZERO);
++				 ksu_policydb_gfp | __GFP_ZERO);
+ 
+ 	struct flex_array *new_val_to_name_types =
+ 		flex_array_alloc(sizeof(char *), db->symtab[SYM_TYPES].nprim,
+-				 GFP_KERNEL | __GFP_ZERO);
++				 ksu_policydb_gfp | __GFP_ZERO);
+ 
+ 	if (!new_type_attr_map_array) {
+ 		pr_err("add_type: alloc type_attr_map_array failed\n");
+@@ -756,20 +759,20 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+ 
+ 	// preallocate so we don't have to worry about the put ever failing
+ 	if (flex_array_prealloc(new_type_attr_map_array, 0, db->p_types.nprim,
+-				GFP_KERNEL | __GFP_ZERO)) {
++				ksu_policydb_gfp | __GFP_ZERO)) {
+ 		pr_err("add_type: prealloc type_attr_map_array failed\n");
+ 		return false;
+ 	}
+ 
+ 	if (flex_array_prealloc(new_type_val_to_struct, 0, db->p_types.nprim,
+-				GFP_KERNEL | __GFP_ZERO)) {
++				ksu_policydb_gfp | __GFP_ZERO)) {
+ 		pr_err("add_type: prealloc type_val_to_struct_array failed\n");
+ 		return false;
+ 	}
+ 
+ 	if (flex_array_prealloc(new_val_to_name_types, 0,
+ 				db->symtab[SYM_TYPES].nprim,
+-				GFP_KERNEL | __GFP_ZERO)) {
++				ksu_policydb_gfp | __GFP_ZERO)) {
+ 		pr_err("add_type: prealloc val_to_name_types failed\n");
+ 		return false;
+ 	}
+@@ -781,14 +784,14 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+ 		old_elem = flex_array_get(db->type_attr_map_array, j);
+ 		if (old_elem)
+ 			flex_array_put(new_type_attr_map_array, j, old_elem,
+-				       GFP_KERNEL | __GFP_ZERO);
++				       ksu_policydb_gfp | __GFP_ZERO);
+ 	}
+ 
+ 	for (j = 0; j < db->type_val_to_struct_array->total_nr_elements; j++) {
+ 		old_elem = flex_array_get_ptr(db->type_val_to_struct_array, j);
+ 		if (old_elem)
+ 			flex_array_put_ptr(new_type_val_to_struct, j, old_elem,
+-					   GFP_KERNEL | __GFP_ZERO);
++					   ksu_policydb_gfp | __GFP_ZERO);
+ 	}
+ 
+ 	for (j = 0; j < db->symtab[SYM_TYPES].nprim; j++) {
+@@ -796,7 +799,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+ 			flex_array_get_ptr(db->sym_val_to_name[SYM_TYPES], j);
+ 		if (old_elem)
+ 			flex_array_put_ptr(new_val_to_name_types, j, old_elem,
+-					   GFP_KERNEL | __GFP_ZERO);
++					   ksu_policydb_gfp | __GFP_ZERO);
+ 	}
+ 
+ 	// store the pointer of old flex arrays first, when assigning new ones we
+@@ -819,7 +822,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+ 		flex_array_free(old_fa);
+ 	}
+ 	flex_array_put_ptr(db->type_val_to_struct_array, value - 1, type,
+-			   GFP_KERNEL | __GFP_ZERO);
++			   ksu_policydb_gfp | __GFP_ZERO);
+ 
+ 	old_fa = db->sym_val_to_name[SYM_TYPES];
+ 	db->sym_val_to_name[SYM_TYPES] = new_val_to_name_types;
+@@ -827,7 +830,7 @@ static bool add_type(struct policydb *db, const char *type_name, bool attr)
+ 		flex_array_free(old_fa);
+ 	}
+ 	flex_array_put_ptr(db->sym_val_to_name[SYM_TYPES], value - 1, key,
+-			   GFP_KERNEL | __GFP_ZERO);
++			   ksu_policydb_gfp | __GFP_ZERO);
+ 
+ 	int i;
+ 	for (i = 0; i < db->p_roles.nprim; ++i) {
+@@ -1076,13 +1079,13 @@ copy_class_datum_partially_callback(struct hashtab_node *new_node,
+     struct constraint_node *oldn, *n, *nprev = NULL;
+     struct constraint_expr *olde, *e, *eprev;
+     new_node->key = old_node->key;
+-    new_cls = kmemdup(cls, sizeof(struct class_datum), GFP_KERNEL);
++    new_cls = kmemdup(cls, sizeof(struct class_datum), ksu_policydb_gfp);
+     if (!new_cls)
+         return -ENOMEM;
+     new_node->datum = new_cls;
+     new_cls->constraints = NULL;
+     for (oldn = cls->constraints; oldn; oldn = oldn->next) {
+-        n = kmemdup(oldn, sizeof(struct constraint_node), GFP_KERNEL);
++        n = kmemdup(oldn, sizeof(struct constraint_node), ksu_policydb_gfp);
+         if (!n)
+             goto out_nomem;
+         if (nprev) {
+@@ -1093,7 +1096,7 @@ copy_class_datum_partially_callback(struct hashtab_node *new_node,
+         eprev = NULL;
+         n->expr = NULL;
+         for (olde = oldn->expr; olde; olde = olde->next) {
+-            e = kmemdup(olde, sizeof(struct constraint_expr), GFP_KERNEL);
++            e = kmemdup(olde, sizeof(struct constraint_expr), ksu_policydb_gfp);
+             if (!e) {
+                 goto out_nomem;
+             }
+@@ -1169,7 +1172,7 @@ static int copy_class_datum_partially(struct policydb *new_db,
+     memset(&new_db->p_classes.table, 0, sizeof(new_db->p_classes.table));
+ 
+     new_class_val_to_struct =
+-        kcalloc(n, sizeof(struct class_datum *), GFP_KERNEL);
++        kcalloc(n, sizeof(struct class_datum *), ksu_policydb_gfp);
+     if (!new_class_val_to_struct) {
+         ret = -ENOMEM;
+         goto exit;
+@@ -1232,7 +1235,7 @@ copy_role_datum_partially_callback(struct hashtab_node *new_node,
+     int ret = 0;
+     struct policydb *db = data;
+     struct role_datum *role = old_node->datum, *new_role;
+-    new_role = kmemdup(role, sizeof(struct role_datum), GFP_KERNEL);
++    new_role = kmemdup(role, sizeof(struct role_datum), ksu_policydb_gfp);
+     if (!new_role) {
+         ret = -ENOMEM;
+         goto out;
+@@ -1284,7 +1287,7 @@ static int copy_role_datum_partially(struct policydb *new_db,
+     memset(&new_db->p_roles.table, 0, sizeof(new_db->p_roles.table));
+ 
+     new_role_val_to_struct =
+-        kcalloc(n, sizeof(*new_db->role_val_to_struct), GFP_KERNEL);
++        kcalloc(n, sizeof(*new_db->role_val_to_struct), ksu_policydb_gfp);
+     if (!new_role_val_to_struct) {
+         ret = -ENOMEM;
+         goto out_free;
+@@ -1344,7 +1347,7 @@ static int copy_type_datum_partially(struct policydb *new_db,
+ 
+     // ======== type_attr_map_array ========
+ 
+-    new_type_attr_map_array = kvcalloc(sz, sizeof(struct ebitmap), GFP_KERNEL);
++    new_type_attr_map_array = kvcalloc(sz, sizeof(struct ebitmap), ksu_policydb_gfp);
+ 
+     if (!new_type_attr_map_array) {
+         goto out;
+@@ -1362,7 +1365,7 @@ static int copy_type_datum_partially(struct policydb *new_db,
+     ret = -ENOMEM;
+ 
+     new_type_val_to_struct =
+-        kvcalloc(sz, sizeof(*new_db->type_val_to_struct), GFP_KERNEL);
++        kvcalloc(sz, sizeof(*new_db->type_val_to_struct), ksu_policydb_gfp);
+     if (!new_type_val_to_struct) {
+         goto out;
+     }
+@@ -1373,7 +1376,7 @@ static int copy_type_datum_partially(struct policydb *new_db,
+     // ======== sym_val_to_name[SYM_TYPES] ========
+ 
+     new_sym_val_to_name_types =
+-        kvcalloc(sz, sizeof(*new_db->sym_val_to_name[SYM_TYPES]), GFP_KERNEL);
++        kvcalloc(sz, sizeof(*new_db->sym_val_to_name[SYM_TYPES]), ksu_policydb_gfp);
+     if (!new_sym_val_to_name_types)
+         goto out;
+     new_db->sym_val_to_name[SYM_TYPES] = new_sym_val_to_name_types;
+@@ -1448,7 +1451,7 @@ struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol)
+ {
+     int ret;
+     struct selinux_policy *new_pol =
+-        kmemdup(old_pol, sizeof(*old_pol), GFP_KERNEL);
++        kmemdup(old_pol, sizeof(*old_pol), ksu_policydb_gfp);
+     if (!new_pol) {
+         return NULL;
+     }
