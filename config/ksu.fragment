@@ -10,7 +10,13 @@ CONFIG_KSU_SUSFS_SUS_PATH=y
 CONFIG_KSU_SUSFS_SUS_MOUNT=y
 CONFIG_KSU_SUSFS_SUS_KSTAT=y
 CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-# CONFIG_KSU_SUSFS_ENABLE_LOG is not set
+# SuSFS log output goes to the kernel ring buffer (printk), which this build
+# gates behind dmesg_restrict=1 + kptr_restrict=2, and the module's susfs.log
+# lives under /data/adb (0700 root). Neither surface is reachable by an
+# unprivileged app -- the threat we actually hide from -- so disabling this buys
+# no stealth against apps while costing all boot-time visibility into what SuSFS
+# is doing (and leaving the susfs4ksu WebUI with an empty log). Keep it on.
+CONFIG_KSU_SUSFS_ENABLE_LOG=y
 CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
 CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
 CONFIG_KSU_SUSFS_OPEN_REDIRECT=y

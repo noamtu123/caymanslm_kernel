@@ -18,10 +18,10 @@ CONFIG_PSTORE_CONSOLE=y
 CONFIG_PSTORE_PMSG=y
 CONFIG_SECURITY_DMESG_RESTRICT=y
 
-# Match the booting diagnostic control: leave dynamic debug, function tracing,
-# and the SuSFS-specific log switch off.  Normal KernelSU printk diagnostics
-# remain visible, while Kprobes stays disabled for the tested manual-hook path.
+# Match the booting diagnostic control: leave dynamic debug and function tracing
+# off (Kprobes stays disabled for the tested manual-hook path).  SuSFS logging is
+# now enabled in the base ksu.fragment for every profile, so this file no longer
+# overrides it off.
 # CONFIG_DYNAMIC_DEBUG is not set
 # CONFIG_FUNCTION_TRACER is not set
 # CONFIG_FUNCTION_GRAPH_TRACER is not set
-# CONFIG_KSU_SUSFS_ENABLE_LOG is not set

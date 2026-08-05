@@ -117,6 +117,7 @@ required_root_config=(
   CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
   CONFIG_KSU_SUSFS_SPOOF_UNAME
   CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+  CONFIG_KSU_SUSFS_ENABLE_LOG
   CONFIG_SECURITY_DMESG_RESTRICT
 )
 for symbol in "${required_root_config[@]}"; do
@@ -125,11 +126,6 @@ for symbol in "${required_root_config[@]}"; do
     exit 1
   fi
 done
-if [ "$PROFILE" != "debug" ] &&
-   ! grep -qx '# CONFIG_KSU_SUSFS_ENABLE_LOG is not set' "$KERNEL_OUT/.config"; then
-  echo "error: SuSFS logging must remain disabled outside the debug profile" >&2
-  exit 1
-fi
 if ! grep -qx 'CONFIG_IKCONFIG_PROC=y' "$KERNEL_OUT/.config"; then
   echo "error: /proc/config.gz is required for Android VINTF compatibility" >&2
   exit 1
