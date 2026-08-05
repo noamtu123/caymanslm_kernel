@@ -1,0 +1,20 @@
+diff --git a/fs/susfs.c b/fs/susfs.c
+--- a/fs/susfs.c
++++ b/fs/susfs.c
+@@ -661,6 +661,16 @@
+ 
+ 	if (!static_branch_unlikely(&susfs_is_uname_spoof_buffer_set))
+ 		return;
++	/* Wraith: the spoofed uname identifies THIS kernel only to root-context
++	 * tooling -- the susfs manager WebUI and `su` sessions run in the ksu
++	 * domain -- while unprivileged apps keep reading the real, stock-looking
++	 * utsname. This is the inverse of the usual susfs uname direction and is
++	 * safe here precisely because our real uname is already stock: the brand
++	 * must never reach an app. Reuses the same ksu-domain predicate susfs
++	 * already uses to show real mounts to root and hide them from apps
++	 * (fs/proc_namespace.c). */
++	if (!susfs_is_current_ksu_domain())
++		return;
+ 	do {
+ 		seq = read_seqbegin(&susfs_uname_seqlock);
+ 		strscpy(tmp->release, my_uname.release, __NEW_UTS_LEN);
