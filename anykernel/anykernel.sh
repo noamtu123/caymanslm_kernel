@@ -66,16 +66,21 @@ PATCH_VBMETA_FLAG=auto;
 # The banner is the standard figlet "Wraith". It is fed through a single-quoted
 # here-doc and printed line-by-line with `read -r`, so the ` \ ' | characters it
 # contains are emitted verbatim -- putting them straight into ui_print "..."
-# would let the shell treat the backtick as a command substitution. This targets
-# the English/LTR reader; a Hebrew (RTL) system language will still right-align
-# and mirror it, which the device owner accepts as a local-locale limitation.
+# would let the shell treat the backtick as a command substitution.
+#
+# The leading indent on the lower W rows uses U+00A0 (NO-BREAK SPACE), not plain
+# 0x20: OrangeFox/TWRP's ui_print strips leading ASCII spaces, which collapsed
+# the W's diagonal to a flat left edge. U+00A0 is not stripped and renders at the
+# same monospace width, so the slant survives. (Internal spaces are never touched,
+# only leading ones.) Targets the English/LTR reader; a Hebrew (RTL) system
+# language still right-aligns/mirrors it -- a local-locale limitation.
 ui_print " ";
 while IFS= read -r _wl; do ui_print "$_wl"; done <<'WRAITH_ART'
 __        __              _  _    _
 \ \      / / _ __   __ _ (_)| |_ | |__
- \ \ /\ / / | '__| / _` || || __|| '_ \
-  \ V  V /  | |   | (_| || || |_ | | | |
-   \_/\_/   |_|    \__,_||_| \__||_| |_|
+ \ \ /\ / / | '__| / _` || || __|| '_ \
+  \ V  V /  | |   | (_| || || |_ | | | |
+   \_/\_/   |_|    \__,_||_| \__||_| |_|
 WRAITH_ART
 ui_print " ";
 ui_print "the wraith kernel  --  v1.0";
