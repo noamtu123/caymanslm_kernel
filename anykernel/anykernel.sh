@@ -57,8 +57,24 @@ PATCH_VBMETA_FLAG=auto;
 # on ro.product.device; this is the same belt-and-braces guard the sibling
 # repo's EDL script uses, because a foreign kernel written into someone's boot
 # is not a recoverable mistake for them.
+#
+# The model line is a fixed label, not a build.prop read: do.devicecheck has
+# already refused any non-caymanslm device by this point, and file_getprop
+# returns empty in recovery (/system is not mounted here) -- that is why the old
+# line rendered a bare "Device:". The banner is letters-only ASCII so it stays
+# intact under recovery consoles that right-align or bidi-reorder punctuation.
 ui_print " ";
-ui_print "Device: $(file_getprop /system/build.prop ro.product.device)";
+ui_print "W   W  RRRR    AAA   IIIII  TTTTT  H   H";
+ui_print "W   W  R   R  A   A    I      T    H   H";
+ui_print "W W W  RRRR   AAAAA    I      T    HHHHH";
+ui_print "WW WW  R R    A   A    I      T    H   H";
+ui_print "W   W  R  R   A   A  IIIII    T    H   H";
+ui_print " ";
+ui_print "the wraith kernel   v1.0";
+ui_print "KernelSU Next  +  SuSFS";
+ui_print " ";
+ui_print "Device: LM-G910EMW";
+ui_print " ";
 
 dump_boot;
 
