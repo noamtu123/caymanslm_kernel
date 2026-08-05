@@ -61,16 +61,24 @@ PATCH_VBMETA_FLAG=auto;
 # The model line is a fixed label, not a build.prop read: do.devicecheck has
 # already refused any non-caymanslm device by this point, and file_getprop
 # returns empty in recovery (/system is not mounted here) -- that is why the old
-# line rendered a bare "Device:". The banner is letters-only ASCII so it stays
-# intact under recovery consoles that right-align or bidi-reorder punctuation.
+# line rendered a bare "Device:".
+#
+# The banner is the standard figlet "Wraith". It is fed through a single-quoted
+# here-doc and printed line-by-line with `read -r`, so the ` \ ' | characters it
+# contains are emitted verbatim -- putting them straight into ui_print "..."
+# would let the shell treat the backtick as a command substitution. This targets
+# the English/LTR reader; a Hebrew (RTL) system language will still right-align
+# and mirror it, which the device owner accepts as a local-locale limitation.
 ui_print " ";
-ui_print "W   W  RRRR    AAA   IIIII  TTTTT  H   H";
-ui_print "W   W  R   R  A   A    I      T    H   H";
-ui_print "W W W  RRRR   AAAAA    I      T    HHHHH";
-ui_print "WW WW  R R    A   A    I      T    H   H";
-ui_print "W   W  R  R   A   A  IIIII    T    H   H";
+while IFS= read -r _wl; do ui_print "$_wl"; done <<'WRAITH_ART'
+__        __              _  _    _
+\ \      / / _ __   __ _ (_)| |_ | |__
+ \ \ /\ / / | '__| / _` || || __|| '_ \
+  \ V  V /  | |   | (_| || || |_ | | | |
+   \_/\_/   |_|    \__,_||_| \__||_| |_|
+WRAITH_ART
 ui_print " ";
-ui_print "the wraith kernel   v1.0";
+ui_print "the wraith kernel  --  v1.0";
 ui_print "KernelSU Next  +  SuSFS";
 ui_print " ";
 ui_print "Device: LM-G910EMW";
