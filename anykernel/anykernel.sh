@@ -63,30 +63,34 @@ PATCH_VBMETA_FLAG=auto;
 # returns empty in recovery (/system is not mounted here) -- that is why the old
 # line rendered a bare "Device:".
 #
-# The banner is the standard figlet "Wraith". It is fed through a single-quoted
-# here-doc and printed line-by-line with `read -r`, so the ` \ ' | characters it
-# contains are emitted verbatim -- putting them straight into ui_print "..."
-# would let the shell treat the backtick as a command substitution.
+# The banner is the standard figlet "Wraith" inside a frame. It is fed through a
+# single-quoted here-doc and printed line-by-line with `read -r`, so the ` \ ' |
+# characters it contains are emitted verbatim -- putting them straight into
+# ui_print "..." would let the shell treat the backtick as a command substitution.
 #
-# The leading indent on the lower W rows uses U+00A0 (NO-BREAK SPACE), not plain
-# 0x20: OrangeFox/TWRP's ui_print strips leading ASCII spaces, which collapsed
-# the W's diagonal to a flat left edge. U+00A0 is not stripped and renders at the
-# same monospace width, so the slant survives. (Internal spaces are never touched,
-# only leading ones.) Targets the English/LTR reader; a Hebrew (RTL) system
-# language still right-aligns/mirrors it -- a local-locale limitation.
+# The frame is not decoration, it is load-bearing. The lower rows of a slanted
+# figlet W need leading indentation, but flashers strip leading whitespace and do
+# it inconsistently: OrangeFox strips ASCII 0x20 yet keeps U+00A0, while the KSUN
+# in-app flasher strips U+00A0 too. Any *invisible* indent therefore fails in one
+# of them. Starting every line with a visible '|' or '+' (never stripped, both
+# flashers are monospace) makes the indent internal, so the slant renders the same
+# everywhere. Targets the English/LTR reader; a Hebrew (RTL) system language still
+# right-aligns/mirrors it -- a local-locale limitation the owner accepts.
 ui_print " ";
 while IFS= read -r _wl; do ui_print "$_wl"; done <<'WRAITH_ART'
-__        __              _  _    _
-\ \      / / _ __   __ _ (_)| |_ | |__
- \ \ /\ / / | '__| / _` || || __|| '_ \
-  \ V  V /  | |   | (_| || || |_ | | | |
-   \_/\_/   |_|    \__,_||_| \__||_| |_|
++------------------------------------------+
+| __        __              _  _    _      |
+| \ \      / / _ __   __ _ (_)| |_ | |__   |
+|  \ \ /\ / / | '__| / _` || || __|| '_ \  |
+|   \ V  V /  | |   | (_| || || |_ | | | | |
+|    \_/\_/   |_|    \__,_||_| \__||_| |_| |
+|                                          |
+| the wraith kernel   v1.0                 |
+| KernelSU Next  +  SuSFS                  |
+|                                          |
+| Device: LM-G910EMW                       |
++------------------------------------------+
 WRAITH_ART
-ui_print " ";
-ui_print "the wraith kernel  --  v1.0";
-ui_print "KernelSU Next  +  SuSFS";
-ui_print " ";
-ui_print "Device: LM-G910EMW";
 ui_print " ";
 
 dump_boot;
