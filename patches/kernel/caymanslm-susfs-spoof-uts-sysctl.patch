@@ -1,0 +1,44 @@
+diff --git a/kernel/utsname_sysctl.c b/kernel/utsname_sysctl.c
+index d2b3b2973456..d8237a229035 100644
+--- a/kernel/utsname_sysctl.c
++++ b/kernel/utsname_sysctl.c
+@@ -14,6 +14,12 @@
+ #include <linux/utsname.h>
+ #include <linux/sysctl.h>
+ #include <linux/wait.h>
++#include <linux/string.h>
++#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++/* Forward-declared to match kernel/sys.c and fs/proc/version.c, which also
++ * call this without pulling in susfs.h. */
++extern void susfs_spoof_uname(struct new_utsname *tmp);
++#endif
+ 
+ #ifdef CONFIG_PROC_SYSCTL
+ 
+@@ -51,6 +57,26 @@ static int proc_do_uts_string(struct ctl_table *table, int write,
+ 	down_read(&uts_sem);
+ 	memcpy(tmp_data, get_uts(table), sizeof(tmp_data));
+ 	up_read(&uts_sem);
++#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++	/* /proc/sys/kernel/{osrelease,version} read utsname directly and so,
++	 * like /proc/version once did, bypass the newuname() spoof. Route the
++	 * release and version reads through the same susfs_spoof_uname() so
++	 * every uname surface agrees regardless of the SELinux policy that
++	 * happens to gate these nodes. Writes and other fields are untouched. */
++	if (!write && table->procname) {
++		struct new_utsname spoofed;
++
++		down_read(&uts_sem);
++		memcpy(&spoofed, utsname(), sizeof(spoofed));
++		susfs_spoof_uname(&spoofed);
++		up_read(&uts_sem);
++
++		if (!strcmp(table->procname, "osrelease"))
++			strlcpy(tmp_data, spoofed.release, sizeof(tmp_data));
++		else if (!strcmp(table->procname, "version"))
++			strlcpy(tmp_data, spoofed.version, sizeof(tmp_data));
++	}
++#endif
+ 	r = proc_dostring(&uts_table, write, buffer, lenp, ppos);
+ 
+ 	if (write) {
