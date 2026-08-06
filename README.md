@@ -20,6 +20,23 @@ build successfully. The SuSFS bridge retains compatibility with the official
 KernelSU Next manager. See [`CLAUDE.md`](CLAUDE.md) for implementation details,
 device constraints, and on-device verification still required.
 
+## Known behavior — "not integrated" on a fast first open after reboot
+
+After a **cold boot**, if you open the KernelSU Next manager within the first
+~30–60 seconds it may show **"not integrated."** This is expected, not a bug.
+
+To recognize the manager, the kernel has to read its APK and verify the
+signature — but that APK sits in credential-encrypted storage that stays locked
+until Android finishes unlocking `/data` (~30 s in). Open the app before that
+window closes and the kernel can't yet confirm it, so it reports not integrated.
+The manager only checks once, at launch, so it keeps showing that until you
+reopen it.
+
+**Fix:** either wait ~1 minute after a reboot before opening the manager, or if
+it already says not integrated, swipe it away from recents and open it again.
+The kernel recognizes the manager the instant `/data` unlocks, so a reopen
+always works.
+
 ## How it is delivered
 
 An **AnyKernel3 zip**, flashed from OrangeFox. AnyKernel3 replaces the kernel
