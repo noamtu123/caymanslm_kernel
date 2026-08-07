@@ -1,0 +1,25 @@
+diff --git a/kernel/runtime/boot_event.c b/kernel/runtime/boot_event.c
+index f9c8491d..fe695ac4 100644
+--- a/kernel/runtime/boot_event.c
++++ b/kernel/runtime/boot_event.c
+@@ -9,6 +9,7 @@
+ #include "runtime/ksud.h"
+ #include "manager/manager_observer.h"
+ #include "manager/throne_tracker.h"
++#include "manager/manager_identity.h"
+ #include "selinux/selinux.h"
+ 
+ bool ksu_module_mounted __read_mostly = false;
+@@ -69,6 +70,11 @@ void on_boot_completed(void)
+ {
+     ksu_boot_completed = true;
+     pr_info("on_boot_completed!\n");
+-    track_throne(true);
++    /*
++     * Prune-only would cancel an unfinished manager discovery. If the manager
++     * is not crowned yet at boot-completed (legacy FBE can delay it), do a full
++     * search here instead of only pruning; prune once it is known.
++     */
++    track_throne(ksu_is_manager_appid_valid());
+     ksu_avc_spoof_late_init();
+ }

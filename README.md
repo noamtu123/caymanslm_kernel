@@ -20,22 +20,36 @@ build successfully. The SuSFS bridge retains compatibility with the official
 KernelSU Next manager. See [`CLAUDE.md`](CLAUDE.md) for implementation details,
 device constraints, and on-device verification still required.
 
-## Known behavior — "not integrated" on a fast first open after reboot
+## Manager discovery after a cold boot
 
-After a **cold boot**, if you open the KernelSU Next manager within the first
-~30–60 seconds it may show **"not integrated."** This is expected, not a bug.
+The kernel recognizes the KernelSU Next manager by reading its APK and verifying
+the signature. On this device that APK sits in credential-encrypted storage that
+stays locked until Android unlocks `/data` — roughly **30–55 s after a cold
+boot** — so nothing can crown the manager before then. That window is inherent to
+legacy FBE and cannot be closed in the kernel.
 
-To recognize the manager, the kernel has to read its APK and verify the
-signature — but that APK sits in credential-encrypted storage that stays locked
-until Android finishes unlocking `/data` (~30 s in). Open the app before that
-window closes and the kernel can't yet confirm it, so it reports not integrated.
-The manager only checks once, at launch, so it keeps showing that until you
-reopen it.
+These changes make discovery across that window reliable and hand the driver fd to
+a manager that is already running:
 
-**Fix:** either wait ~1 minute after a reboot before opening the manager, or if
-it already says not integrated, swipe it away from recents and open it again.
-The kernel recognizes the manager the instant `/data` unlocks, so a reopen
-always works.
+- the async discovery worker retries with a bounded ~60 s backoff, so it spans the
+  whole unlock window instead of giving up after ~1 s;
+- once it crowns the verified UID, it installs the fd into the running manager via
+  a task-work callback (no identity is granted — the UID was already crowned by the
+  certificate check);
+- `on_boot_completed` runs a full search when no manager is crowned yet, instead
+  of a prune-only pass that would cancel discovery.
+
+**What this does and does not remove.** Open the manager *after* `/data` unlocks
+(the normal case) and it is crowned at spawn and reads "working" on the first try.
+Open it *before* unlock and its APK is unreadable, so the manager's one-time
+startup check caches "not integrated." The official manager does not re-probe a
+failed instance on its own (verified on-device), so that first instance can still
+need a reopen — the fd we install lands in the running process, but the UI only
+reflects it if the app re-checks. Removing the reopen entirely needs either a
+manager that re-probes (a userspace change) or a persisted optimistic crown from a
+prior boot (a kernel feature with a small trust tradeoff — not implemented here).
+**"Zygisk required"** on modules is a separate, downstream wait on ReZygisk's
+daemons finishing startup, which the kernel can't accelerate.
 
 ## How it is delivered
 

@@ -170,13 +170,30 @@ setup_kernelsu() {
     zz-ksu-legacy-initial-manager-scan.patch
     zzz-ksu-legacy-verified-manager-scan.patch
     zzzzzzz-ksu-manager-scan-retry-until-crowned.patch
-    # zzzzzzzz-ksu-manager-synchronous-setuid-discovery.patch is deliberately
-    # NOT applied: it made the setresuid hook do a synchronous /data/app walk +
-    # packages.list read under a mutex on every app-uid spawn during the boot
-    # storm -- a risky pattern that cannot beat the FBE/ENOKEY wall anyway (the
-    # manager APK is unreadable until CE storage unlocks ~30-55s in). The async
-    # throne worker (retained, with scan-retry) still crowns at CE-unlock.
     zzzzzzzzz-ksu-manager-remove-spurious-dentry-lock-gate.patch
+    # Manager discovery stays fully async -- no synchronous /data/app walk in the
+    # setresuid hot path. That pattern, once tried as
+    # zzzzzzzz-ksu-manager-synchronous-setuid-discovery.patch, is removed: it
+    # scanned on every app-uid spawn during the boot storm and still cannot beat
+    # the FBE/ENOKEY wall, since the manager APK is unreadable until CE storage
+    # unlocks ~30-55s in. Instead the async throne worker crowns at CE-unlock and
+    # these three close the "crowned but the running manager never got its fd"
+    # gap that used to force a swipe-from-recents reopen ("not integrated" /
+    # "Zygisk required"):
+    #   * repair-running-fd: after crown_manager() verifies the signature and
+    #     crowns the UID, task_work_add() installs the manager fd into the
+    #     already-running manager on its next return to userspace. No identity is
+    #     granted -- the UID was already crowned by the certificate check.
+    #   * retry-backoff-fbe-window: widen the worker's retry from ~1s (10x100ms)
+    #     to a bounded ~60s exponential backoff so it actually spans CE-unlock.
+    #   * boot-completed-search-if-uncrowned: on_boot_completed does a full search
+    #     when no manager is crowned yet, instead of a prune-only pass that would
+    #     cancel discovery.
+    # Order matters: repair before retry (both edit throne_tracker.c; retry's
+    # hunk sits on post-repair line numbers).
+    zzzzzzzz-ksu-manager-repair-running-fd.patch
+    zzzzzzz3-ksu-manager-retry-backoff-fbe-window.patch
+    zz2-ksu-boot-completed-search-if-uncrowned.patch
     zzzzzz-ksu-newfstatat-initrc-helper.patch
     # zzzzzzzzzz2-ksu-initrc-fbe-late-trigger.patch is deliberately NOT applied
     # any more (dropped 2026-08-02). It added a second

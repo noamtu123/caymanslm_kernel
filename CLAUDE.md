@@ -130,6 +130,33 @@ guards detect it and skip re-injecting.
 Only the official KernelSU Next manager is granted root; a mismatched APK installs
 fine but is never granted, presenting as "KSU is broken".
 
+**Manager discovery on legacy FBE.** The manager APK lives in credential-encrypted
+storage that stays locked until `/data` unlocks (~30–55 s post cold-boot), so the
+signature check that crowns the manager physically cannot run before then — no
+kernel change removes that window. What the kernel does own is the *stuck* state
+after unlock: discovery is async, so the manager can be crowned a beat after it
+already launched, and nothing installed its driver fd into the running process —
+the old "open fast → not integrated until you swipe-from-recents and reopen." Three
+patches harden discovery across that window without any synchronous I/O in the
+setuid hot path (the rejected
+`synchronous-setuid-discovery` approach — a `/data/app` walk on every uncrowned
+app spawn — is **not** used): `zzzzzzzz-ksu-manager-repair-running-fd` pushes the fd
+into the already-running manager via `task_work_add` right after `crown_manager()`
+verifies the signature; `zzzzzzz3-...-retry-backoff-fbe-window` widens the throne
+worker's retry from ~1 s to a bounded ~60 s so it spans CE-unlock;
+`zz2-...-boot-completed-search-if-uncrowned` makes `on_boot_completed` do a full
+search when uncrowned instead of a discovery-cancelling prune.
+**These do not by themselves remove the fast-open reopen.** Per on-device logs
+([[manager-crowning-race]]) the official manager runs its integration check once at
+startup and **never re-probes a failed instance**, so a manager opened *before*
+CE-unlock caches "not integrated" and the late fd we install is not read until the
+app re-checks. Removing the reopen for that first instance needs the manager to
+re-probe (userspace) or a **persisted optimistic crown** from a DE-early
+`/data/adb` hint (Option B in [[manager-crowning-race]]; a real feature with a
+sub-second trust window, gated so GRANT_ROOT waits on APK re-verify) — not
+implemented. `"Zygisk required"` on modules waits on ReZygisk's daemons, not the
+kernel.
+
 **SuSFS is kernel-side only here.** This repo produces a SuSFS-capable kernel; the
 `ksu_susfs` tool and `ksu_module_susfs` hiding module install separately from
 upstream. Consequence: **the kernel alone hides nothing** — SuSFS does almost

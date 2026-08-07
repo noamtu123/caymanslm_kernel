@@ -1,0 +1,34 @@
+diff --git a/kernel/manager/throne_tracker.c b/kernel/manager/throne_tracker.c
+index c0180448..2eff08c3 100644
+--- a/kernel/manager/throne_tracker.c
++++ b/kernel/manager/throne_tracker.c
+@@ -437,14 +437,25 @@ static void ksu_throne_work_fn(struct work_struct *work)
+ 	revert_creds(saved_cred);
+ 	mutex_unlock(&throne_tracker_mutex);
+ 
+-	if (!success && data->retries < 10) {
++	/*
++	 * Legacy FBE keeps the manager APK unreadable until CE storage unlocks
++	 * (~30-55s after a cold boot on this device), so the old ~1s window
++	 * (10x100ms) expires long before discovery can succeed. Retry with a
++	 * bounded exponential backoff that spans the unlock: 250ms, 500ms, 1s,
++	 * 2s, then 4s -- ~60s over 18 tries. Still bounded, so a genuinely
++	 * absent manager stops the worker.
++	 */
++	if (!success && data->retries < 18) {
++		unsigned int shift = data->retries < 4 ? data->retries : 4;
++		unsigned int delay_ms = 250U << shift; /* capped at 4000ms */
++
+ 		data->retries++;
+-		pr_info("throne_tracker: retrying (%d/10) in 100ms...\n", data->retries);
++		pr_info("throne_tracker: retrying (%d/18) in %ums...\n", data->retries, delay_ms);
+ 		// Reschedule exactly this work instance
+-		schedule_delayed_work(&data->dwork, msecs_to_jiffies(100));
++		schedule_delayed_work(&data->dwork, msecs_to_jiffies(delay_ms));
+ 	} else {
+ 		if (!success) {
+-			pr_warn("throne_tracker: giving up after 10 retries.\n");
++			pr_warn("throne_tracker: giving up after 18 retries.\n");
+ 		}
+ 		data->retries = 0; // Resets for future triggers
+ 	}

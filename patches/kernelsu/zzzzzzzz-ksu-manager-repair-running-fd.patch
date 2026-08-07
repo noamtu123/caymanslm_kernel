@@ -1,0 +1,83 @@
+diff --git a/kernel/manager/throne_tracker.c b/kernel/manager/throne_tracker.c
+index 903d6f35..c0180448 100644
+--- a/kernel/manager/throne_tracker.c
++++ b/kernel/manager/throne_tracker.c
+@@ -18,6 +18,9 @@
+ #include "manager_identity.h"
+ #include "throne_tracker.h"
+ #include "compat/kernel_compat.h"
++#include <linux/sched.h>
++#include <linux/task_work.h>
++#include "supercall/supercall.h"
+ 
+ uid_t ksu_manager_appid = KSU_INVALID_APPID;
+ 
+@@ -29,6 +32,60 @@ struct uid_data {
+ 	char package[KSU_MAX_PACKAGE_NAME];
+ };
+ 
++static void ksu_repair_manager_fd_tw_func(struct callback_head *cb)
++{
++	/* Runs in the manager task on its next return to userspace. */
++	if (is_manager())
++		ksu_install_fd();
++	kfree(cb);
++}
++
++/*
++ * The manager fd is normally installed while zygote spawns the manager (see
++ * ksu_handle_setresuid). On legacy FBE this device can start the manager before
++ * its APK is readable, so that spawn-time check runs before the UID is crowned
++ * and installs nothing. Once the verified-signature discovery path finally
++ * crowns the UID, push the fd into the already-running manager instead of
++ * requiring a reopen. This grants no identity: the UID was already crowned by
++ * the normal certificate check (is_manager_apk) before we are called.
++ */
++static void ksu_repair_running_manager_fd(uid_t appid)
++{
++	struct task_struct *task;
++	struct task_struct *manager_task = NULL;
++	struct callback_head *cb;
++
++	read_lock(&tasklist_lock);
++	for_each_process (task) {
++		if (!task->mm)
++			continue;
++		if (task_uid(task).val % KSU_PER_USER_RANGE != appid)
++			continue;
++		get_task_struct(task);
++		manager_task = task;
++		break;
++	}
++	read_unlock(&tasklist_lock);
++
++	if (!manager_task)
++		return;
++
++	cb = kzalloc(sizeof(*cb), GFP_KERNEL);
++	if (!cb) {
++		put_task_struct(manager_task);
++		return;
++	}
++
++	cb->func = ksu_repair_manager_fd_tw_func;
++	if (task_work_add(manager_task, cb, TWA_RESUME)) {
++		pr_info("manager fd repair skipped: pid %d exiting\n", manager_task->pid);
++		kfree(cb);
++	} else {
++		pr_info("queued manager fd repair: pid %d appid %d\n", manager_task->pid, appid);
++	}
++	put_task_struct(manager_task);
++}
++
+ static void crown_manager(const char *apk, struct list_head *uid_data)
+ {
+ 	char pkg[KSU_MAX_PACKAGE_NAME];
+@@ -46,6 +103,7 @@ static void crown_manager(const char *apk, struct list_head *uid_data)
+ 		if (strncmp(np->package, pkg, KSU_MAX_PACKAGE_NAME) == 0) {
+ 			pr_info("Crowning manager: %s(uid=%d)\n", pkg, np->uid);
+ 			ksu_set_manager_appid(np->uid);
++			ksu_repair_running_manager_fd(np->uid);
+ 			break;
+ 		}
+ 	}
