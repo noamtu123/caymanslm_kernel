@@ -123,6 +123,16 @@ else
   fail=1
 fi
 
+# NoMount has no standalone version banner, so assert the option from the
+# IKCONFIG payload embedded in the artifact. This proves nomount.o was selected
+# by the final resolved configuration rather than merely present in the tree.
+if grep -qx 'CONFIG_NOMOUNT=y' "$CONFIG_TEXT"; then
+  note ok "NoMount present"
+else
+  note FAIL "CONFIG_NOMOUNT is absent from the built image"
+  fail=1
+fi
+
 # Version strings alone can pass when the bridge was compiled without the
 # capabilities promised by the release profile. The public IKCONFIG view is
 # deliberately redacted, so verify the bridge's compiled feature strings in

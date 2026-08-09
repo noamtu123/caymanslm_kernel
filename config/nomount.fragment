@@ -1,0 +1,13 @@
+# NoMount — caymanslm (4.9.337, non-GKI)
+#
+# Mountless systemless-mod engine (github.com/maxsteeel/nomount, v1.1.1). Injects
+# files and redirects paths purely at the VFS layer so /proc/mounts stays stock;
+# it replaces the module MOUNT mechanism, not KernelSU (root still comes from KSU).
+# Hook sites + the fs/nomount.{c,h} sources land via
+# patches/kernel/caymanslm-zz-nomount-4.9-integration.patch, which is re-anchored
+# to sit on top of the KSU + SuSFS stack and applied LAST by setup-tree.sh.
+#
+# Inert until the userspace `nm` binary adds rules: the iterate_dir replacement
+# falls through to the native ->iterate_shared/->iterate while the
+# nomount_active_dirs static branch is unset. No CONFIG_KPROBES needed.
+CONFIG_NOMOUNT=y

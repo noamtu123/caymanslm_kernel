@@ -90,7 +90,7 @@ echo "Configuring ($KERNEL_DEFCONFIG) ..."
 # without forking the defconfig itself.  The default baseline is deliberately
 # limited to the proved KSU/SUSFS fragment; release/debug changes require an
 # explicit profile and can never silently alter a recovery build.
-fragments=("$HERE/config/ksu.fragment")
+fragments=("$HERE/config/ksu.fragment" "$HERE/config/nomount.fragment")
 if [ "$PROFILE" != "baseline" ]; then
   profile_fragment="$HERE/config/profiles/$PROFILE.fragment"
   [ -f "$profile_fragment" ] || { echo "error: unknown build profile '$PROFILE'" >&2; exit 1; }
@@ -119,6 +119,7 @@ required_root_config=(
   CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
   CONFIG_KSU_SUSFS_ENABLE_LOG
   CONFIG_SECURITY_DMESG_RESTRICT
+  CONFIG_NOMOUNT
 )
 for symbol in "${required_root_config[@]}"; do
   if ! grep -qx "$symbol=y" "$KERNEL_OUT/.config"; then

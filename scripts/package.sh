@@ -71,6 +71,7 @@ REV="$(git -C "$KERNEL_SRC" rev-parse --short HEAD)"
 TAGS=""
 grep -q '^CONFIG_KSU=y' "$KERNEL_OUT/.config" 2>/dev/null && TAGS="${TAGS}-ksu"
 grep -q '^CONFIG_KSU_SUSFS=y' "$KERNEL_OUT/.config" 2>/dev/null && TAGS="${TAGS}-susfs"
+grep -q '^CONFIG_NOMOUNT=y' "$KERNEL_OUT/.config" 2>/dev/null && TAGS="${TAGS}-nomount"
 [ -n "$TAGS" ] || TAGS="-stock"
 
 NAME="caymanslm-kernel-$(date +%Y%m%d)-${REV}${TAGS}.zip"

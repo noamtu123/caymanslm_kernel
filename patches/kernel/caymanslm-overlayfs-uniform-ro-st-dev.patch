@@ -1,0 +1,40 @@
+Subject: [PATCH] overlayfs: add xino-style identity for read-only LG unions
+
+LG mounts /product as a read-only overlay whose lower layers live on
+different filesystems.  This 4.9 overlayfs predates xino support, so its
+getattr implementation returns the lower filesystem's st_dev for regular
+files while directories return the overlay superblock's st_dev.  Besides
+making a single tree appear to cross devices, that makes filesystem scanners
+report every APK, ODEX and VDEX below /product as an inconsistent mount.
+
+Use the overlay superblock device for objects on read-only overlay mounts,
+but also encode the real device in the high 32 bits of st_ino.  The latter is
+essential: changing st_dev alone can collapse distinct (st_dev, st_ino) pairs
+from different lower filesystems into the same identity.  If the real inode
+does not fit in 32 bits, retain the original identity, matching upstream
+xino's safe overflow fallback.  Writable overlays retain the upstream 4.9
+behavior, where preserving the real layer identity can matter during copy-up.
+
+diff --git a/fs/overlayfs/inode.c b/fs/overlayfs/inode.c
+--- a/fs/overlayfs/inode.c
++++ b/fs/overlayfs/inode.c
+@@ -116,6 +116,19 @@ static int ovl_getattr(struct vfsmount *mnt, struct dentry *dentry,
+ 	old_cred = ovl_override_creds(dentry->d_sb);
+ 	err = vfs_getattr(&realpath, stat);
+ 	ovl_revert_creds(old_cred);
++
++	/*
++	 * Give small lower inode numbers a unified, collision-free identity like
++	 * upstream xino: preserve the real device in high inode bits, then expose
++	 * the overlay device.  Merely replacing st_dev is unsafe because two lower
++	 * filesystems can contain the same inode number.  Keep the real identity on
++	 * overflow and leave writable/copy-up overlays on the original 4.9 path.
++	 */
++	if (!err && (dentry->d_sb->s_flags & MS_RDONLY) &&
++	    stat->dev != dentry->d_sb->s_dev && !(stat->ino >> 32)) {
++		stat->ino |= (u64)stat->dev << 32;
++		stat->dev = dentry->d_sb->s_dev;
++	}
+ 	return err;
+ }
+ 
