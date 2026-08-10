@@ -90,8 +90,19 @@ else
 fi
 
 # --- root stack --------------------------------------------------------------
+# BISECT=1 builds deliberately drop parts of the root stack to isolate a bug (see
+# config/bisect-*.fragment). The SuSFS assertions below are then expected to fail,
+# so downgrade them to warnings -- everything else (version string, EDL marker,
+# public config redaction) is still enforced, because a diagnostic image still gets
+# RAM-booted or flashed on the real phone.
+if [ "${BISECT:-0}" = "1" ]; then
+  note WARN "BISECT=1: SuSFS assertions downgraded to warnings -- DIAGNOSTIC IMAGE, DO NOT SHIP"
+fi
+
 if grep -qF "$SUSFS_VERSION" "$SYMS"; then
   note ok "SuSFS $SUSFS_VERSION present"
+elif [ "${BISECT:-0}" = "1" ]; then
+  note WARN "SuSFS $SUSFS_VERSION marker absent (expected under BISECT)"
 else
   note FAIL "SuSFS $SUSFS_VERSION marker absent"
   fail=1
@@ -118,6 +129,8 @@ fi
 
 if grep -qi 'KernelSU' "$SYMS"; then
   note ok "KernelSU present"
+elif [ "${BISECT:-0}" = "1" ]; then
+  note WARN "KernelSU marker absent (expected under BISECT)"
 else
   note FAIL "KernelSU marker absent"
   fail=1
@@ -128,6 +141,8 @@ fi
 # by the final resolved configuration rather than merely present in the tree.
 if grep -qx 'CONFIG_NOMOUNT=y' "$CONFIG_TEXT"; then
   note ok "NoMount present"
+elif [ "${BISECT:-0}" = "1" ]; then
+  note WARN "CONFIG_NOMOUNT absent (expected under BISECT)"
 else
   note FAIL "CONFIG_NOMOUNT is absent from the built image"
   fail=1
@@ -150,6 +165,8 @@ required_susfs_config=(
 for symbol in "${required_susfs_config[@]}"; do
   if grep -qF "$symbol" "$SYMS"; then
     note ok "$symbol bridge present"
+  elif [ "${BISECT:-0}" = "1" ]; then
+    note WARN "$symbol bridge marker absent (expected under BISECT)"
   else
     note FAIL "$symbol bridge marker absent"
     fail=1

@@ -25,3 +25,10 @@ CONFIG_SECURITY_DMESG_RESTRICT=y
 # CONFIG_DYNAMIC_DEBUG is not set
 # CONFIG_FUNCTION_TRACER is not set
 # CONFIG_FUNCTION_GRAPH_TRACER is not set
+
+# Flip the shipped kernel's fail-closed CONFIG_PANIC_ON_OOPS=y (config/diag.fragment)
+# back OFF for active hook development: keep the kernel alive after a fault so the
+# full backtrace can be read live with `dmesg` before the watchdog resets. On this
+# device that live read is the ONLY capture that works -- the LG bootloader wipes
+# pstore on reboot, so a panic would leave nothing. This profile is never shipped.
+# CONFIG_PANIC_ON_OOPS is not set

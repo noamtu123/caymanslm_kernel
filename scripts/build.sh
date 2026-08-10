@@ -90,7 +90,8 @@ echo "Configuring ($KERNEL_DEFCONFIG) ..."
 # without forking the defconfig itself.  The default baseline is deliberately
 # limited to the proved KSU/SUSFS fragment; release/debug changes require an
 # explicit profile and can never silently alter a recovery build.
-fragments=("$HERE/config/ksu.fragment" "$HERE/config/nomount.fragment")
+fragments=("$HERE/config/ksu.fragment" "$HERE/config/nomount.fragment" "$HERE/config/diag.fragment")
+[ -n "${EXTRA_FRAGMENT:-}" ] && fragments+=("$HERE/config/$EXTRA_FRAGMENT")
 if [ "$PROFILE" != "baseline" ]; then
   profile_fragment="$HERE/config/profiles/$PROFILE.fragment"
   [ -f "$profile_fragment" ] || { echo "error: unknown build profile '$PROFILE'" >&2; exit 1; }
@@ -120,9 +121,26 @@ required_root_config=(
   CONFIG_KSU_SUSFS_ENABLE_LOG
   CONFIG_SECURITY_DMESG_RESTRICT
   CONFIG_NOMOUNT
+  CONFIG_LOCKUP_DETECTOR
+  CONFIG_DETECT_HUNG_TASK
 )
+# BISECT=1 relaxes the root-stack assertions so a deliberately crippled kernel can
+# be built to bisect a bug (e.g. "does the crash survive with SuSFS off?").  Such a
+# build is a diagnostic only and must never be shipped -- hence the loud banner and
+# the fact that it cannot be reached from a plain ./scripts/build.sh invocation.
+if [ "${BISECT:-0}" = "1" ]; then
+  echo "############################################################" >&2
+  echo "## BISECT=1: root-stack config assertions are DISABLED.    ##" >&2
+  echo "## This build is a diagnostic. DO NOT SHIP IT.             ##" >&2
+  echo "############################################################" >&2
+fi
+
 for symbol in "${required_root_config[@]}"; do
   if ! grep -qx "$symbol=y" "$KERNEL_OUT/.config"; then
+    if [ "${BISECT:-0}" = "1" ]; then
+      echo "  bisect: $symbol is NOT enabled (assertion skipped)" >&2
+      continue
+    fi
     echo "error: required root-stack option $symbol is not enabled" >&2
     exit 1
   fi
@@ -139,6 +157,9 @@ if [ "$PROFILE" = "release" ]; then
     'CONFIG_SECURITY_DMESG_RESTRICT=y'
     'CONFIG_PSTORE=y'
     'CONFIG_PSTORE_RAM=y'
+    # Fail closed: a corrupted kernel must stop, not run with half-broken
+    # root-hiding that exposes root to a detector. --profile=debug flips it off.
+    'CONFIG_PANIC_ON_OOPS=y'
   )
   for expected in "${required_release_config[@]}"; do
     if ! grep -qx "$expected" "$KERNEL_OUT/.config"; then

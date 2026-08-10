@@ -1,0 +1,35 @@
+caymanslm: widen the QCOM watchdog bark window 16s -> 30s
+
+The APPS watchdog (drivers/soc/qcom/watchdog_v2.c:wdog_bark_handler) responds to
+a bark by immediately calling msm_trigger_wdog_bite() -- a hardware SoC reset --
+with panic() only as a fallback. So a kernel *hang* (a spinning hook / deadlock)
+becomes a hard reset with nothing captured: at the stock 16s bark the hardware
+bite fires before anything can be read out.
+
+The warn-only soft-lockup / hung-task detectors (config/diag.fragment) print the
+stuck backtrace to the kernel ring at ~20s (2 x watchdog_thresh) while the other
+CPUs keep running -- but only if they get to run before the bite. Widening
+bark-time to 30s gives them that window, so root can read the trace live with
+`dmesg` before the reset. On this device that live read is the only capture that
+works: the LG bootloader wipes the ramoops/pstore RAM on every reset, so nothing
+survives a reboot.
+
+This does NOT fix the com.eltavine.duckdetector reboot that first motivated it:
+that turned out to be a genuine panic() which reboots regardless, not a hang the
+detectors catch (see tests/baselines/duckdetector-kernel-panic-UPSTREAM-REPORT.md).
+It is kept as a general aid for debugging future hook hangs. Cost: a genuine
+unrecoverable hang resets 14s later than stock.
+
+diff --git a/arch/arm64/boot/dts/lge/sdm845-judy/sdm845-caymanslm_common/sdm845-caymanslm_common.dtsi b/arch/arm64/boot/dts/lge/sdm845-judy/sdm845-caymanslm_common/sdm845-caymanslm_common.dtsi
+index 581dc12ea1c7..decce850e513 100644
+--- a/arch/arm64/boot/dts/lge/sdm845-judy/sdm845-caymanslm_common/sdm845-caymanslm_common.dtsi
++++ b/arch/arm64/boot/dts/lge/sdm845-judy/sdm845-caymanslm_common/sdm845-caymanslm_common.dtsi
+@@ -66,7 +66,7 @@
+ 
+ &soc {
+ 	wdog: qcom,wdt@17980000{
+-		qcom,bark-time = <16000>;
++		qcom,bark-time = <30000>;
+ 	};
+ 
+ 	ramoops {

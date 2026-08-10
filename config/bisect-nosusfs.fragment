@@ -1,0 +1,24 @@
+# BISECT STEP 1 — KernelSU on, SuSFS entirely off.  DIAGNOSTIC ONLY, DO NOT SHIP.
+#
+# Duck Detector (com.eltavine.duckdetector) hard-crashes our kernel within seconds
+# in Enforcing mode, but not in Permissive, and not on either stock kernel. Two
+# audit-driven fixes have already missed, so this splits the stack mechanically
+# instead of guessing:
+#
+#   crash still happens  -> the fault is in KernelSU core / our sepolicy patches
+#                           (runtime policydb surgery, policy_rwlock, nnp hook)
+#   crash goes away      -> the fault is in the SuSFS backport
+#                           (avc-log spoofing, sus_path/kstat, open redirect, ...)
+#
+# Build with:  BISECT=1 ./scripts/build.sh --profile=release
+# (BISECT=1 is required: it relaxes the root-stack assertions in build.sh.)
+# CONFIG_KSU_SUSFS is not set
+# CONFIG_KSU_SUSFS_SUS_PATH is not set
+# CONFIG_KSU_SUSFS_SUS_MOUNT is not set
+# CONFIG_KSU_SUSFS_SUS_KSTAT is not set
+# CONFIG_KSU_SUSFS_SUS_MAP is not set
+# CONFIG_KSU_SUSFS_SPOOF_UNAME is not set
+# CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG is not set
+# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set
+# CONFIG_KSU_SUSFS_ENABLE_LOG is not set
+# CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS is not set

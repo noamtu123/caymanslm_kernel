@@ -1,0 +1,30 @@
+# BISECT STEP 3 — KernelSU core only.  DIAGNOSTIC ONLY, DO NOT SHIP.
+#
+# Where the bisection stands:
+#   step 1 (bisect-nosusfs): KSU on,  NoMount on,  SuSFS off -> CRASHES
+#   step 2 (bisect-noksu):   KSU off, NoMount off, SuSFS off -> NO CRASH
+# so the cause is KernelSU core or NoMount, and the base LineageOS 4.9.337 kernel
+# plus our non-root patches are exonerated (as is the whole SuSFS backport).
+#
+# This step keeps KernelSU and drops NoMount:
+#   crash still happens -> KernelSU core. Next split is KSU's runtime sepolicy
+#                          rule application (the policydb surgery: add_type/
+#                          apply_kernelsu_rules under policy_rwlock).
+#   crash goes away     -> NoMount is the cause, and the NoMount VFS-redirect
+#                          engine gets the next audit.
+#
+# Build with:  BISECT=1 EXTRA_FRAGMENT=bisect-ksuonly.fragment \
+#              ./scripts/build.sh --profile=release
+CONFIG_KSU=y
+CONFIG_KSU_MANUAL_HOOK=y
+# CONFIG_KSU_SUSFS is not set
+# CONFIG_KSU_SUSFS_SUS_PATH is not set
+# CONFIG_KSU_SUSFS_SUS_MOUNT is not set
+# CONFIG_KSU_SUSFS_SUS_KSTAT is not set
+# CONFIG_KSU_SUSFS_SUS_MAP is not set
+# CONFIG_KSU_SUSFS_SPOOF_UNAME is not set
+# CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG is not set
+# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set
+# CONFIG_KSU_SUSFS_ENABLE_LOG is not set
+# CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS is not set
+# CONFIG_NOMOUNT is not set

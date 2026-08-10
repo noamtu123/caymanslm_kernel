@@ -1,0 +1,32 @@
+# BISECT STEP 2 — the whole root stack off.  DIAGNOSTIC ONLY, DO NOT SHIP.
+#
+# Step 1 (config/bisect-nosusfs.fragment) proved the Duck Detector crash survives
+# with SuSFS entirely disabled, so SuSFS is not the cause. This step removes
+# KernelSU and NoMount too, leaving essentially the plain LineageOS 4.9.337 kernel
+# plus our non-root patches (EDL warm reset, overlayfs uniform st_dev, sanitized
+# ikconfig, the SELinux policy_rwlock/policydb-alloc changes).
+#
+# This closes a real gap in the evidence: BOTH stock baselines that survived Duck
+# Detector were LG 4.9.227 kernels. A plain Lineage 4.9.337 has never been tested,
+# so "the bug is in the base kernel we build from" is still an open possibility.
+#
+#   crash still happens  -> the bug is in LineageOS 4.9.337 itself or in our base
+#                           kernel patches -- NOT in the root stack at all
+#   crash goes away      -> the bug is in KernelSU core / NoMount, and the next
+#                           split is KSU's runtime sepolicy rule application
+#
+# Build with:  BISECT=1 EXTRA_FRAGMENT=bisect-noksu.fragment \
+#              ./scripts/build.sh --profile=release
+# CONFIG_KSU is not set
+# CONFIG_KSU_MANUAL_HOOK is not set
+# CONFIG_KSU_SUSFS is not set
+# CONFIG_KSU_SUSFS_SUS_PATH is not set
+# CONFIG_KSU_SUSFS_SUS_MOUNT is not set
+# CONFIG_KSU_SUSFS_SUS_KSTAT is not set
+# CONFIG_KSU_SUSFS_SUS_MAP is not set
+# CONFIG_KSU_SUSFS_SPOOF_UNAME is not set
+# CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG is not set
+# CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set
+# CONFIG_KSU_SUSFS_ENABLE_LOG is not set
+# CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS is not set
+# CONFIG_NOMOUNT is not set

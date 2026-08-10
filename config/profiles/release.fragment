@@ -20,3 +20,11 @@ CONFIG_KALLSYMS_BASE_RELATIVE=y
 CONFIG_PSTORE=y
 CONFIG_PSTORE_RAM=y
 CONFIG_SECURITY_DMESG_RESTRICT=y
+
+# Release inherits config/diag.fragment's debugging in full -- the warn-only
+# lockup/hung-task detectors, symbolized backtraces, root-only dmesg, AND its
+# fail-closed CONFIG_PANIC_ON_OOPS=y (a corrupted kernel stops rather than run
+# with possibly half-broken root-hiding). All of it is root-only (dmesg-gated),
+# so it is stealth-neutral. The only thing release strips is the genuinely
+# app-observable / fingerprintable surface (broad kallsyms, tracing, kprobes,
+# kcore, devmem, above). Maximum root-only debugging, minimum external surface.

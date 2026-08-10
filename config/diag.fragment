@@ -1,0 +1,56 @@
+# Root-only crash/hang diagnostics -- applied to EVERY profile, release included.
+#
+# Design goal (the "dmesg model"): keep useful kernel debugging permanently
+# compiled in, but reachable ONLY by root. Everything here surfaces through the
+# kernel ring buffer, which is dmesg_restrict=1 and SELinux-gated, so an
+# untrusted app sees nothing; `dmesg` via su shows it all. /proc/config.gz is
+# redacted (verify-image.sh), so these options don't advertise themselves either.
+#
+# Scope note on the Duck Detector (com.eltavine.duckdetector) crash that
+# motivated this file: it turned out to be a genuine panic() that cold-resets the
+# phone, NOT a lockup and NOT a recoverable oops -- the soft/hard-lockup
+# detectors below never fired for it, and it reboots regardless of PANIC_ON_OOPS.
+# It is also un-capturable on this device: LG's bootloader wipes the ramoops RAM
+# on every reset, lge.crash_handler/lge.hiddenreset are bootloader params we
+# cannot override, and 4.9 netconsole is impossible here (no ndo_poll_controller
+# on wlan0 or the u_ether gadget). That investigation is closed and handed to
+# upstream -- see tests/baselines/duckdetector-kernel-panic-UPSTREAM-REPORT.md
+# and [[duckdetector-kernel-panic-capture]]. The detectors below are kept not for
+# that bug but as general, root-only aids for future hook development.
+
+# Soft/hard-lockup detector, WARN-only. A CPU spinning in-kernel (a hook stuck on
+# a lock, a deadlock) prints "BUG: soft lockup - CPU#N stuck ..." plus a full call
+# trace to the ring while the other CPUs keep running -- long enough to read it
+# live with `dmesg`. Panic-on-lockup is deliberately left OFF: a panic reboots,
+# and on this device a reboot destroys the ring (ramoops is wiped), so panicking
+# would trade the trace for nothing. It stays runtime-armable if ever wanted
+# (echo 1 > /proc/sys/kernel/softlockup_panic).
+CONFIG_LOCKUP_DETECTOR=y
+# CONFIG_BOOTPARAM_SOFTLOCKUP_PANIC is not set
+
+# Hung-task detection, also WARN-only. Panic-on-hang is off so a 120s D-state
+# false positive (slow storage, a boot stall) can never bootloop the daily
+# kernel; root can arm it on demand (echo 1 > /proc/sys/kernel/hung_task_panic).
+CONFIG_DETECT_HUNG_TASK=y
+CONFIG_DEFAULT_HUNG_TASK_TIMEOUT=120
+# CONFIG_BOOTPARAM_HUNG_TASK_PANIC is not set
+
+# --- Oops handling: FAIL CLOSED ----------------------------------------------
+# An oops means kernel state is corrupted. On a root-hiding kernel, letting it
+# keep running is both a security and an anti-detection risk:
+#   - a corrupted-state window is exactly what a privilege-escalation exploit
+#     wants; failing stop (panic) closes it. This is why Android hardens to
+#     panic_on_oops=1.
+#   - if a SuSFS/KSU hook faults, the hiding can end up half-applied while the
+#     rest of Android keeps running -- leaving the REAL root files exposed to a
+#     detector. A clean crash prevents any app from seeing that unhidden state.
+# So the shipped kernel (baseline and release) fails closed.
+#
+# Caveat specific to THIS device: panic_on_oops does NOT buy a crash log here,
+# because the LG bootloader wipes the ramoops/pstore RAM on every reset (see the
+# header) -- a panic-reboot leaves pstore empty. So when you are ACTIVELY
+# developing hooks and need the backtrace, build --profile=debug, which flips
+# this back OFF so the kernel survives the fault and you read the trace live with
+# `dmesg` before the watchdog resets. That live read is the only capture that
+# works on this phone, and that build is never shipped.
+CONFIG_PANIC_ON_OOPS=y
