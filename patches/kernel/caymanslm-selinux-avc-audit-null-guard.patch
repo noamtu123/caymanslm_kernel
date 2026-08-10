@@ -1,0 +1,172 @@
+caymanslm: never BUG() in the AVC denial-audit and ebitmap paths
+
+Companion to caymanslm-selinux-bounds-null-guard.patch, covering the files that one
+missed.
+
+The important pair is in avc.c:
+
+	BUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));
+
+in avc_dump_query() and avc_dump_av(). secclass_map is a COMPILE-TIME table, while
+KernelSU extends the live policy at runtime, so a class index can legitimately exceed
+it. Both functions run ONLY when auditing a denial -- i.e. only in enforcing mode --
+which makes this an app-reachable panic: generate the right denial, kill the kernel.
+Degrade the audit record (log the numeric tclass) instead of BUG().
+
+Also hardened:
+  - avc_has_perm*()          BUG_ON(!requested) -> fail closed with -EACCES
+  - ebitmap.h accessors      the three BUG_ON(index >= EBITMAP_UNIT_NUMS); these are
+                             hot inlines with no printk available, so they fail safe
+                             silently (get returns 0, set/clr become no-ops)
+  - sidtab.c                 BUG_ON(loc >= SIDTAB_CACHE_LEN) -> skip the cache update
+
+Same caveat as the companion patch: these did not fix the com.eltavine.duckdetector
+panic (it still occurs with every one of them in place, and none of them logged), so
+they are hardening, not a fix.
+
+diff --git a/security/selinux/avc.c b/security/selinux/avc.c
+index 174c4abcda4a..634cb1e49058 100644
+--- a/security/selinux/avc.c
++++ b/security/selinux/avc.c
+@@ -34,6 +34,11 @@
+ #include "avc_ss.h"
+ #include "classmap.h"
+ 
++#ifdef CONFIG_KSU_SUSFS
++extern u32 susfs_ksu_sid;
++extern struct static_key_false susfs_is_avc_log_spoofing_enabled;
++#endif
++
+ #define AVC_CACHE_SLOTS			512
+ #define AVC_DEF_CACHE_THRESHOLD		512
+ #define AVC_CACHE_RECLAIM		16
+@@ -116,7 +121,19 @@ static void avc_dump_av(struct audit_buffer *ab, u16 tclass, u32 av)
+ 		return;
+ 	}
+ 
+-	BUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));
++	/*
++	 * secclass_map is a COMPILE-TIME table, but KernelSU adds classes to the
++	 * live policydb, so tclass can legitimately exceed it here.  This runs in
++	 * the denial-audit path (enforcing only) under avc/policy locks, where a
++	 * BUG() is an unrecoverable panic an unprivileged app can trigger just by
++	 * causing the right denial.  Degrade the audit record instead.
++	 */
++	if (unlikely(!tclass || tclass >= ARRAY_SIZE(secclass_map))) {
++		pr_warn_once("SELinux: avc_dump_av: tclass %u outside secclass_map (%zu)\n",
++			     tclass, ARRAY_SIZE(secclass_map));
++		audit_log_format(ab, " av=0x%x", av);
++		return;
++	}
+ 	perms = secclass_map[tclass-1].perms;
+ 
+ 	audit_log_format(ab, " {");
+@@ -157,15 +174,29 @@ static void avc_dump_query(struct audit_buffer *ab, u32 ssid, u32 tsid, u16 tcla
+ 		kfree(scontext);
+ 	}
+ 
+-	rc = security_sid_to_context(tsid, &scontext, &scontext_len);
+-	if (rc)
+-		audit_log_format(ab, " tsid=%d", tsid);
+-	else {
+-		audit_log_format(ab, " tcontext=%s", scontext);
+-		kfree(scontext);
++#ifdef CONFIG_KSU_SUSFS
++	if (static_branch_likely(&susfs_is_avc_log_spoofing_enabled) &&
++	    unlikely(tsid == susfs_ksu_sid)) {
++		audit_log_format(ab, " tcontext=%s",
++				 "u:r:priv_app:s0:c512,c768");
++	} else
++#endif
++	{
++		rc = security_sid_to_context(tsid, &scontext, &scontext_len);
++		if (rc)
++			audit_log_format(ab, " tsid=%d", tsid);
++		else {
++			audit_log_format(ab, " tcontext=%s", scontext);
++			kfree(scontext);
++		}
+ 	}
+ 
+-	BUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));
++	if (unlikely(!tclass || tclass >= ARRAY_SIZE(secclass_map))) {
++		pr_warn_once("SELinux: avc_dump_query: tclass %u outside secclass_map (%zu)\n",
++			     tclass, ARRAY_SIZE(secclass_map));
++		audit_log_format(ab, " tclass=%u", tclass);
++		return;
++	}
+ 	audit_log_format(ab, " tclass=%s", secclass_map[tclass-1].name);
+ }
+ 
+@@ -1016,7 +1047,10 @@ int avc_has_extended_perms(u32 ssid, u32 tsid, u16 tclass, u32 requested,
+ 	int rc = 0, rc2;
+ 
+ 	xp_node = &local_xp_node;
+-	BUG_ON(!requested);
++	if (unlikely(!requested)) {
++		pr_warn_once("SELinux: avc: empty request\n");
++		return -EACCES;
++	}
+ 
+ 	rcu_read_lock();
+ 
+@@ -1104,7 +1138,10 @@ inline int avc_has_perm_noaudit(u32 ssid, u32 tsid,
+ 	int rc = 0;
+ 	u32 denied;
+ 
+-	BUG_ON(!requested);
++	if (unlikely(!requested)) {
++		pr_warn_once("SELinux: avc: empty request\n");
++		return -EACCES;
++	}
+ 
+ 	rcu_read_lock();
+ 
+diff --git a/security/selinux/ss/ebitmap.h b/security/selinux/ss/ebitmap.h
+index 9637b8c71085..0aa7ecbdb299 100644
+--- a/security/selinux/ss/ebitmap.h
++++ b/security/selinux/ss/ebitmap.h
+@@ -90,7 +90,8 @@ static inline int ebitmap_node_get_bit(struct ebitmap_node *n,
+ 	unsigned int index = EBITMAP_NODE_INDEX(n, bit);
+ 	unsigned int ofs = EBITMAP_NODE_OFFSET(n, bit);
+ 
+-	BUG_ON(index >= EBITMAP_UNIT_NUMS);
++	if (unlikely(index >= EBITMAP_UNIT_NUMS))
++		return 0;
+ 	if ((n->maps[index] & (EBITMAP_BIT << ofs)))
+ 		return 1;
+ 	return 0;
+@@ -102,7 +103,8 @@ static inline void ebitmap_node_set_bit(struct ebitmap_node *n,
+ 	unsigned int index = EBITMAP_NODE_INDEX(n, bit);
+ 	unsigned int ofs = EBITMAP_NODE_OFFSET(n, bit);
+ 
+-	BUG_ON(index >= EBITMAP_UNIT_NUMS);
++	if (unlikely(index >= EBITMAP_UNIT_NUMS))
++		return;
+ 	n->maps[index] |= (EBITMAP_BIT << ofs);
+ }
+ 
+@@ -112,7 +114,8 @@ static inline void ebitmap_node_clr_bit(struct ebitmap_node *n,
+ 	unsigned int index = EBITMAP_NODE_INDEX(n, bit);
+ 	unsigned int ofs = EBITMAP_NODE_OFFSET(n, bit);
+ 
+-	BUG_ON(index >= EBITMAP_UNIT_NUMS);
++	if (unlikely(index >= EBITMAP_UNIT_NUMS))
++		return;
+ 	n->maps[index] &= ~(EBITMAP_BIT << ofs);
+ }
+ 
+diff --git a/security/selinux/ss/sidtab.c b/security/selinux/ss/sidtab.c
+index 5840a35155fc..4ea5b796f1b7 100644
+--- a/security/selinux/ss/sidtab.c
++++ b/security/selinux/ss/sidtab.c
+@@ -149,7 +149,8 @@ int sidtab_map(struct sidtab *s,
+ 
+ static void sidtab_update_cache(struct sidtab *s, struct sidtab_node *n, int loc)
+ {
+-	BUG_ON(loc >= SIDTAB_CACHE_LEN);
++	if (unlikely(loc >= SIDTAB_CACHE_LEN))
++		return;
+ 
+ 	while (loc > 0) {
+ 		s->cache[loc] = s->cache[loc - 1];

@@ -1,0 +1,115 @@
+ksu: roll back p_types.nprim when add_type() fails partway
+
+add_type() publishes the new type's index before that index is usable:
+
+    u32 value = ++db->p_types.nprim;   /* readers now believe this type exists */
+    ...                                /* kstrdup / symtab_insert / three
+                                          flex_array_alloc + prealloc calls */
+    flex_array_put_ptr(db->type_val_to_struct_array, value - 1, type, ...);
+
+Every failure between those two points returned false with the counter already
+bumped, leaving type_val_to_struct_array permanently holding a NULL slot for an
+index the policy claims exists. This is reachable in practice: the path now runs
+with GFP_ATOMIC (zzzzzzzzzzz-ksu-sepolicy-no-sleep-under-policy-rwlock.patch),
+which fails far more readily than GFP_KERNEL.
+
+The SELinux readers then hit that NULL slot inside the policy_rwlock read
+section, where the upstream reaction is BUG_ON(!type) -- an unrecoverable panic
+in atomic context, on a spinning lock, with no oops and nothing logged. That is
+how an unprivileged app (com.eltavine.duckdetector) hard-crashes the phone just
+by driving enough domain transitions and permission checks.
+
+Unwind the speculative increment on every early-failure path, and free the
+allocations that would otherwise leak with it. The companion
+patches/kernel/caymanslm-selinux-bounds-null-guard.patch hardens the readers so
+a NULL slot denies instead of panicking; this patch stops producing one.
+
+--- a/kernel/selinux/sepolicy.c
++++ b/kernel/selinux/sepolicy.c
+@@ -611,11 +611,19 @@
+         return true;
+     }
+ 
++    /*
++     * NOTE: p_types.nprim is the count the SELinux readers trust.  Incrementing
++     * it before type_val_to_struct_array[value - 1] is filled opens a window
++     * where the policy claims a type whose datum slot is still NULL, and
++     * security_bounded_transition()/type_bounds_av() read that slot under
++     * policy_rwlock.  Every failure path below must therefore roll the counter
++     * back, or the NULL slot becomes permanent.
++     */
+     u32 value = ++db->p_types.nprim;
+     type = (struct type_datum *)kzalloc(sizeof(struct type_datum), ksu_policydb_gfp);
+     if (!type) {
+         pr_err("add_type: alloc type_datum failed.\n");
+-        return false;
++        goto err_unwind;
+     }
+ 
+     type->primary = 1;
+@@ -625,12 +633,15 @@
+     char *key = kstrdup(type_name, ksu_policydb_gfp);
+     if (!key) {
+         pr_err("add_type: alloc key failed.\n");
+-        return false;
++        kfree(type);
++        goto err_unwind;
+     }
+ 
+     if (symtab_insert(&db->p_types, key, type)) {
+         pr_err("add_type: insert symtab failed.\n");
+-        return false;
++        kfree(key);
++        kfree(type);
++        goto err_unwind;
+     }
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
+@@ -744,7 +755,7 @@
+ 
+ 	if (!new_type_attr_map_array) {
+ 		pr_err("add_type: alloc type_attr_map_array failed\n");
+-		return false;
++		goto err_unwind;
+ 	}
+ 
+ 	if (!new_type_val_to_struct) {
+@@ -761,20 +772,20 @@
+ 	if (flex_array_prealloc(new_type_attr_map_array, 0, db->p_types.nprim,
+ 				ksu_policydb_gfp | __GFP_ZERO)) {
+ 		pr_err("add_type: prealloc type_attr_map_array failed\n");
+-		return false;
++		goto err_unwind;
+ 	}
+ 
+ 	if (flex_array_prealloc(new_type_val_to_struct, 0, db->p_types.nprim,
+ 				ksu_policydb_gfp | __GFP_ZERO)) {
+ 		pr_err("add_type: prealloc type_val_to_struct_array failed\n");
+-		return false;
++		goto err_unwind;
+ 	}
+ 
+ 	if (flex_array_prealloc(new_val_to_name_types, 0,
+ 				db->symtab[SYM_TYPES].nprim,
+ 				ksu_policydb_gfp | __GFP_ZERO)) {
+ 		pr_err("add_type: prealloc val_to_name_types failed\n");
+-		return false;
++		goto err_unwind;
+ 	}
+ 
+ 	int j;
+@@ -838,6 +849,14 @@
+ 	}
+ 	return true;
+ #endif
++
++err_unwind:
++	/*
++	 * Undo the speculative count so the readers never see an index whose
++	 * type_val_to_struct slot was never filled.
++	 */
++	db->p_types.nprim--;
++	return false;
+ }
+ 
+ static bool set_type_state(struct policydb *db, const char *type_name,

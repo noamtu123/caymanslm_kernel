@@ -1,0 +1,278 @@
+caymanslm: never BUG() in the SELinux policy-evaluation paths
+
+Upstream SELinux assumes the policy is loaded once and never mutated, and on that
+assumption sprinkles BUG()/BUG_ON() through the hot evaluation paths as
+"cannot happen" assertions. KernelSU breaks that assumption: it performs live
+surgery on the policydb (adds types, grows type_attr_map_array, inserts avtab and
+xperm nodes, deep-copies class datums and their constraint expressions).
+
+Every one of those assertions runs under read_lock(&policy_rwlock) with preemption
+disabled, so ANY inconsistency becomes an unrecoverable atomic-context panic that an
+unprivileged app can trigger simply by causing the right permission check. That is
+not an acceptable failure mode for a kernel that mutates its own policy.
+
+Convert them all to fail closed -- deny the permission / skip the refinement and
+pr_warn_once() -- instead of killing the machine:
+
+  - context_struct_compute_av()          type_attr_map slots (every perm check)
+  - services_compute_xperms_decision()   type_attr_map slots + xperms specified
+  - security_bounded_transition()        type_datum lookup (every exec transition)
+  - type_attribute_bounds_av()           source/target type_datum
+  - constraint_expr_eval()               6 BUG()s + stack depth asserts
+  - context_struct_to_string()           NULL symbol names
+  - permission-value range assert
+
+All guards fail CLOSED: an early return leaves avd->allowed = 0, and an unmet
+constraint masks permissions off, so nothing is ever wrongly allowed.
+
+NOTE: on this device none of these guards has ever fired -- a validator confirmed
+the policydb is structurally intact (nprim=3356, zero NULL slots in any of the three
+type arrays). They are kept as hardening of a genuine defect class, NOT as a fix for
+the com.eltavine.duckdetector panic, which remains unexplained. See
+tests/baselines/duckdetector-kernel-panic-UPSTREAM-REPORT.md.
+
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+index b818410d2418..3c97eb7a8c30 100644
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -287,16 +307,19 @@ static int constraint_expr_eval(struct context *scontext,
+ 	for (e = cexpr; e; e = e->next) {
+ 		switch (e->expr_type) {
+ 		case CEXPR_NOT:
+-			BUG_ON(sp < 0);
++			if (unlikely(sp < 0))
++				return 0;
+ 			s[sp] = !s[sp];
+ 			break;
+ 		case CEXPR_AND:
+-			BUG_ON(sp < 1);
++			if (unlikely(sp < 1))
++				return 0;
+ 			sp--;
+ 			s[sp] &= s[sp + 1];
+ 			break;
+ 		case CEXPR_OR:
+-			BUG_ON(sp < 1);
++			if (unlikely(sp < 1))
++				return 0;
+ 			sp--;
+ 			s[sp] |= s[sp + 1];
+ 			break;
+@@ -378,12 +401,12 @@ static int constraint_expr_eval(struct context *scontext,
+ 				s[++sp] = mls_level_incomp(l2, l1);
+ 				continue;
+ 			default:
+-				BUG();
++				pr_warn_once("SELinux: malformed constraint expression\n");
+ 				return 0;
+ 			}
+ 			break;
+ 			default:
+-				BUG();
++				pr_warn_once("SELinux: malformed constraint expression\n");
+ 				return 0;
+ 			}
+ 
+@@ -395,7 +418,7 @@ static int constraint_expr_eval(struct context *scontext,
+ 				s[++sp] = (val1 != val2);
+ 				break;
+ 			default:
+-				BUG();
++				pr_warn_once("SELinux: malformed constraint expression\n");
+ 				return 0;
+ 			}
+ 			break;
+@@ -408,7 +431,7 @@ static int constraint_expr_eval(struct context *scontext,
+ 			else if (e->attr & CEXPR_XTARGET) {
+ 				c = xcontext;
+ 				if (!c) {
+-					BUG();
++					pr_warn_once("SELinux: malformed constraint expression\n");
+ 					return 0;
+ 				}
+ 			}
+@@ -419,7 +442,7 @@ static int constraint_expr_eval(struct context *scontext,
+ 			else if (e->attr & CEXPR_TYPE)
+ 				val1 = c->type;
+ 			else {
+-				BUG();
++				pr_warn_once("SELinux: malformed constraint expression\n");
+ 				return 0;
+ 			}
+ 
+@@ -431,17 +454,21 @@ static int constraint_expr_eval(struct context *scontext,
+ 				s[++sp] = !ebitmap_get_bit(&e->names, val1 - 1);
+ 				break;
+ 			default:
+-				BUG();
++				pr_warn_once("SELinux: malformed constraint expression\n");
+ 				return 0;
+ 			}
+ 			break;
+ 		default:
+-			BUG();
++			/* Unknown expression type: treat the constraint as unmet. */
++			pr_warn_once("SELinux: unknown constraint expr type\n");
+ 			return 0;
+ 		}
+ 	}
+ 
+-	BUG_ON(sp != 0);
++	if (unlikely(sp != 0)) {
++		pr_warn_once("SELinux: malformed constraint expression\n");
++		return 0;
++	}
+ 	return s[0];
+ }
+ 
+@@ -454,7 +481,11 @@ static int dump_masked_av_helper(void *k, void *d, void *args)
+ 	struct perm_datum *pdatum = d;
+ 	char **permission_names = args;
+ 
+-	BUG_ON(pdatum->value < 1 || pdatum->value > 32);
++	if (unlikely(pdatum->value < 1 || pdatum->value > 32)) {
++		pr_warn_once("SELinux: permission value %d out of range\n",
++			     pdatum->value);
++		return 0;
++	}
+ 
+ 	permission_names[pdatum->value - 1] = (char *)k;
+ 
+@@ -553,14 +584,27 @@ static void type_attribute_bounds_av(struct context *scontext,
+ 
+ 	source = flex_array_get_ptr(policydb.type_val_to_struct_array,
+ 				    scontext->type - 1);
+-	BUG_ON(!source);
++	/*
++	 * A runtime-added type (KernelSU's add_type()) can leave a NULL slot for
++	 * an index p_types.nprim already counts.  Do not BUG() under
++	 * policy_rwlock: skip the bounds refinement instead.
++	 */
++	if (unlikely(!source)) {
++		pr_warn_once("SELinux: type_bounds_av: no type_datum for source type %u\n",
++			     scontext->type);
++		return;
++	}
+ 
+ 	if (!source->bounds)
+ 		return;
+ 
+ 	target = flex_array_get_ptr(policydb.type_val_to_struct_array,
+ 				    tcontext->type - 1);
+-	BUG_ON(!target);
++	if (unlikely(!target)) {
++		pr_warn_once("SELinux: type_bounds_av: no type_datum for target type %u\n",
++			     tcontext->type);
++		return;
++	}
+ 
+ 	memset(&lo_avd, 0, sizeof(lo_avd));
+ 
+@@ -659,9 +703,13 @@ static void context_struct_compute_av(struct context *scontext,
+ 	avkey.target_class = tclass;
+ 	avkey.specified = AVTAB_AV | AVTAB_XPERMS;
+ 	sattr = flex_array_get(policydb.type_attr_map_array, scontext->type - 1);
+-	BUG_ON(!sattr);
+ 	tattr = flex_array_get(policydb.type_attr_map_array, tcontext->type - 1);
+-	BUG_ON(!tattr);
++	if (unlikely(!sattr || !tattr)) {
++		/* Runtime-modified policydb: deny rather than BUG() in atomic ctx. */
++		pr_warn_once("SELinux: compute_av: no type_attr_map for %u/%u\n",
++			     scontext->type, tcontext->type);
++		return;
++	}
+ 	ebitmap_for_each_positive_bit(sattr, snode, i) {
+ 		ebitmap_for_each_positive_bit(tattr, tnode, j) {
+ 			avkey.source_type = i + 1;
+@@ -886,7 +934,17 @@ int security_bounded_transition(u32 old_sid, u32 new_sid)
+ 	while (true) {
+ 		type = flex_array_get_ptr(policydb.type_val_to_struct_array,
+ 					  index - 1);
+-		BUG_ON(!type);
++		/*
++		 * NULL slot => the policy claims a type we have no datum for.
++		 * Treat as "not bounded": deny the transition (fail closed)
++		 * rather than panic from inside the policy_rwlock read section.
++		 */
++		if (unlikely(!type)) {
++			pr_warn_once("SELinux: bounded_transition: no type_datum for type %d\n",
++				     index);
++			rc = -EPERM;
++			break;
++		}
+ 
+ 		/* not bounded anymore */
+ 		rc = -EPERM;
+@@ -948,7 +1006,8 @@ void services_compute_xperms_decision(struct extended_perms_decision *xpermd,
+ 					xpermd->driver))
+ 			return;
+ 	} else {
+-		BUG();
++		pr_warn_once("SELinux: unknown xperms specified\n");
++		return;
+ 	}
+ 
+ 	if (node->key.specified == AVTAB_XPERMS_ALLOWED) {
+@@ -985,7 +1044,9 @@ void services_compute_xperms_decision(struct extended_perms_decision *xpermd,
+ 					node->datum.u.xperms->perms.p[i];
+ 		}
+ 	} else {
+-		BUG();
++		/* Corrupt/unknown xperms record: ignore it instead of BUG(). */
++		pr_warn_once("SELinux: unknown xperms specified 0x%x\n",
++			     node->datum.u.xperms->specified);
+ 	}
+ }
+ 
+@@ -1044,10 +1105,13 @@ void security_compute_xperms_decision(u32 ssid,
+ 	avkey.specified = AVTAB_XPERMS;
+ 	sattr = flex_array_get(policydb.type_attr_map_array,
+ 				scontext->type - 1);
+-	BUG_ON(!sattr);
+ 	tattr = flex_array_get(policydb.type_attr_map_array,
+ 				tcontext->type - 1);
+-	BUG_ON(!tattr);
++	if (unlikely(!sattr || !tattr)) {
++		pr_warn_once("SELinux: xperms_decision: no type_attr_map for %u/%u\n",
++			     scontext->type, tcontext->type);
++		goto out;
++	}
+ 	ebitmap_for_each_positive_bit(sattr, snode, i) {
+ 		ebitmap_for_each_positive_bit(tattr, tnode, j) {
+ 			avkey.source_type = i + 1;
+@@ -1199,10 +1263,31 @@ static int context_struct_to_string(struct context *context, char **scontext, u3
+ 		return 0;
+ 	}
+ 
+-	/* Compute the size of the context. */
+-	*scontext_len += strlen(sym_name(&policydb, SYM_USERS, context->user - 1)) + 1;
+-	*scontext_len += strlen(sym_name(&policydb, SYM_ROLES, context->role - 1)) + 1;
+-	*scontext_len += strlen(sym_name(&policydb, SYM_TYPES, context->type - 1)) + 1;
++	/*
++	 * KernelSU grows the policydb at runtime, so a symbol slot can be NULL
++	 * for an index the policy already counts.  sym_name() is a bare
++	 * flex_array_get_ptr(), so the strlen()s below would then dereference
++	 * NULL -- in the AVC denial-audit path, under read_lock(&policy_rwlock)
++	 * with preemption disabled, i.e. an unrecoverable atomic-context panic
++	 * that an unprivileged app can trigger just by causing denials.
++	 * Refuse to render the context instead.
++	 */
++	{
++		const char *u_name = sym_name(&policydb, SYM_USERS, context->user - 1);
++		const char *r_name = sym_name(&policydb, SYM_ROLES, context->role - 1);
++		const char *t_name = sym_name(&policydb, SYM_TYPES, context->type - 1);
++
++		if (unlikely(!u_name || !r_name || !t_name)) {
++			pr_warn_once("SELinux: context_struct_to_string: NULL symbol name (user=%u role=%u type=%u)\n",
++				     context->user, context->role, context->type);
++			return -EINVAL;
++		}
++
++		/* Compute the size of the context. */
++		*scontext_len += strlen(u_name) + 1;
++		*scontext_len += strlen(r_name) + 1;
++		*scontext_len += strlen(t_name) + 1;
++	}
+ 	*scontext_len += mls_compute_context_len(context);
+ 
+ 	if (!scontext)

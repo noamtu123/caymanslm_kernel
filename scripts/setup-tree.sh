@@ -227,6 +227,13 @@ setup_kernelsu() {
     # patches/kernel/caymanslm-selinux-policydb-atomic-alloc.patch, which adds
     # the ksu_policydb_gfp knob this switches to GFP_ATOMIC.
     zzzzzzzzzzz-ksu-sepolicy-no-sleep-under-policy-rwlock.patch
+    # add_type() bumps p_types.nprim before filling
+    # type_val_to_struct_array[value-1] and its failure paths never rolled it
+    # back, leaving a NULL slot for an index the policy claims exists. The
+    # SELinux readers BUG_ON() that slot under policy_rwlock, so an unprivileged
+    # app could hard-panic the phone. Must come after the no-sleep patch above,
+    # whose GFP_ATOMIC switch is what makes those failures likely.
+    zzzzzzzzzzz2-ksu-add-type-publish-order.patch
   )
   local ksu_patches=()
   local patch_name
