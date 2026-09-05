@@ -167,6 +167,31 @@ upstream. Consequence: **the kernel alone hides nothing** — SuSFS does almost
 nothing until that userspace module drives it, so "SuSFS works" is only verifiable
 with the module installed. Hiding applies to KSU-umounted apps, not `adb shell`.
 
+## NoMount — the userspace module version must match
+
+The kernel half is **NoMount v1.1.0** (`patches/kernel/caymanslm-zz-nomount-4.9-integration.patch`),
+Generic Netlink family `nomount`, ABI `NOMOUNT_VERSION 10`.
+
+**Install the v1.1.0 metamodule, not v1.1.1.** v1.1.1's `nm` binary is built for
+a later ABI and SIGSEGVs on startup against this kernel. `metamount.sh`'s only
+gate is `if ! nm v`, so that crash makes the module write its own `disable` file
+and report *"[FATAL] NoMount Netlink interface missing/unresponsive"* and
+*"Kernel not patched"*. That message is indistinguishable from a kernel with no
+NoMount at all, and it is a lie in that case -- it is a userspace mismatch.
+
+Diagnose kernel-side NoMount by what the kernel says, never by the module or by
+`/proc/config.gz`:
+
+```
+adb shell su -c 'dmesg | grep -i nomount'      # want: NoMount: Loaded successfully
+adb shell su -c 'grep -c nomount_genl /proc/kallsyms'
+```
+
+`/proc/config.gz` will NOT show `CONFIG_NOMOUNT` even when it is enabled --
+`caymanslm-sanitized-ikconfig.patch` deliberately strips `CONFIG_NOMOUNT`,
+`CONFIG_KSU*`, `SUSFS` and `CONFIG_CAYMANSLM*` from that endpoint. Grepping
+config.gz to check for these is always a false negative.
+
 ## Status
 
 - **Phases 0–5 built and booting on-device.**

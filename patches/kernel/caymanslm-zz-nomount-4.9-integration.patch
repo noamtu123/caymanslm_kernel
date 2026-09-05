@@ -1,8 +1,22 @@
-Subject: [PATCH] nomount: VFS path-redirection subsystem (v1.1.1) for caymanslm 4.9
+Subject: [PATCH] nomount: VFS path-redirection subsystem (v1.1.0) for caymanslm 4.9
 
-Source:  github.com/maxsteeel/nomount  (module.prop version v1.1.1)
+Source:  github.com/maxsteeel/nomount  (module.prop version v1.1.0)
 Patch:   kernel/patches/nomount_4.9_kernel_integration.patch
 Target:  LineageOS android_kernel_lge_sdm845 4.9.337
+
+USERSPACE MODULE MUST MATCH: install the NoMount **v1.1.0** metamodule against
+this kernel. The kernel half here implements Generic Netlink ABI
+NOMOUNT_VERSION 10 (family "nomount", NOMOUNT_GENL_VERSION 1); the v1.1.1
+module ships an `nm` binary built for a later ABI, and against this kernel it
+SIGSEGVs on startup. metamount.sh's only gate is `if ! nm v`, so that crash
+makes the module write its own `disable` file and report "[FATAL] NoMount
+Netlink interface missing/unresponsive" / "Kernel not patched" -- which reads
+exactly like a kernel with no NoMount at all, even though the kernel side is
+present and `dmesg` shows "NoMount: Loaded successfully".
+
+This header previously said v1.1.1, which is wrong and cost real debugging
+time: it sent the reader looking for a kernel fault when the mismatch was in
+userspace.
 
 Mountless systemless-mod engine: injects files and redirects paths purely at
 the VFS layer, so /proc/mounts stays stock. Standalone (own Generic Netlink
