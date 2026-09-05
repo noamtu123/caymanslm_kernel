@@ -1,13 +1,18 @@
 # NoMount — caymanslm (4.9.337, non-GKI)
 #
-# Mountless systemless-mod engine (github.com/maxsteeel/nomount, v1.1.1). Injects
+# Mountless systemless-mod engine (github.com/maxsteeel/nomount, v2.0.0). Injects
 # files and redirects paths purely at the VFS layer so /proc/mounts stays stock;
 # it replaces the module MOUNT mechanism, not KernelSU (root still comes from KSU).
-# Hook sites + the fs/nomount.{c,h} sources land via
-# patches/kernel/caymanslm-zz-nomount-4.9-integration.patch, which is re-anchored
-# to sit on top of the KSU + SuSFS stack and applied LAST by setup-tree.sh.
+# The self-contained fs/nomount/ subdir (Kconfig, Makefile, nomount.c, nomount.h)
+# lands via patches/kernel/caymanslm-zz-nomount-4.9-integration.patch, applied
+# LAST by setup-tree.sh (it shares fs/Kconfig + fs/Makefile with SuSFS). v2.0.0
+# intercepts by hijacking i_op/i_fop/s_op vectors when the userspace `nm` binary
+# adds a rule, so -- unlike v1.1.0 -- it patches NO core VFS files.
 #
-# Inert until the userspace `nm` binary adds rules: the iterate_dir replacement
-# falls through to the native ->iterate_shared/->iterate while the
-# nomount_active_dirs static branch is unset. No CONFIG_KPROBES needed.
+# Control channel is a keyring key_type "nomount" driven by add_key(2); ABI is
+# NOMOUNT_VERSION "20". The userspace metamodule MUST be v2.0.0 to match -- a
+# v1.1.x Netlink `nm` cannot talk to this kernel. See [[nomount-version-must-match-module]].
+#
+# Inert until `nm` adds rules: with no hijacked dirs, every fake op-vector falls
+# through to the original. No CONFIG_KPROBES needed.
 CONFIG_NOMOUNT=y

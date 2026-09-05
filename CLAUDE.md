@@ -169,22 +169,28 @@ with the module installed. Hiding applies to KSU-umounted apps, not `adb shell`.
 
 ## NoMount — the userspace module version must match
 
-The kernel half is **NoMount v1.1.0** (`patches/kernel/caymanslm-zz-nomount-4.9-integration.patch`),
-Generic Netlink family `nomount`, ABI `NOMOUNT_VERSION 10`.
+The kernel half is **NoMount v2.0.0** (`patches/kernel/caymanslm-zz-nomount-4.9-integration.patch`),
+a keyring `key_type "nomount"` driven by `add_key(2)`, ABI `NOMOUNT_VERSION "20"`,
+magic `0x4E4F4D4F554E54` ("NOMOUNT"). **The Generic Netlink family of v1.1.x is
+gone** — v2.0.0 rewrote the channel. The kernel side is the self-contained
+`fs/nomount/` subdir and intercepts by hijacking `i_op`/`i_fop`/`s_op` vectors
+when `nm` adds a rule, so it patches **no** core VFS files (v1.1.0 patched six).
+The upstream source lands verbatim on this 4.9 tree — the author's compat macros
+already cover `<5.2`, and this LineageOS tree carries the `rb_root_cached`
+backport (see the patch header for the full 4.9 portability notes).
 
-**Install the v1.1.0 metamodule, not v1.1.1.** v1.1.1's `nm` binary is built for
-a later ABI and SIGSEGVs on startup against this kernel. `metamount.sh`'s only
-gate is `if ! nm v`, so that crash makes the module write its own `disable` file
-and report *"[FATAL] NoMount Netlink interface missing/unresponsive"* and
-*"Kernel not patched"*. That message is indistinguishable from a kernel with no
-NoMount at all, and it is a lie in that case -- it is a userspace mismatch.
+**Install the v2.0.0 metamodule — a v1.1.x Netlink `nm` cannot talk to this
+kernel at all** (no genl family), and a v2.0.0 `nm` cannot talk to a v1.1.x
+kernel. As always, `metamount.sh`'s only gate is `if ! nm v`, so a version/ABI
+mismatch surfaces as *"[FATAL] NoMount Netlink interface missing/unresponsive"* /
+*"Kernel not patched"* — a userspace-mismatch lie, not a kernel fault.
 
 Diagnose kernel-side NoMount by what the kernel says, never by the module or by
 `/proc/config.gz`:
 
 ```
 adb shell su -c 'dmesg | grep -i nomount'      # want: NoMount: Loaded successfully
-adb shell su -c 'grep -c nomount_genl /proc/kallsyms'
+adb shell su -c 'grep -c nomount /proc/kallsyms'
 ```
 
 `/proc/config.gz` will NOT show `CONFIG_NOMOUNT` even when it is enabled --
