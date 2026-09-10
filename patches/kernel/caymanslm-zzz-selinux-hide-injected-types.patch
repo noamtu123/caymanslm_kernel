@@ -1,0 +1,223 @@
+caymanslm: hide runtime-injected SELinux types from unprivileged app probes
+
+Duck Detector's DANGER card ("Enforcing with KSU context materialized") is
+driven by one fact leaking through the SELinux userspace query surface:
+KernelSU injects its own types (ksu, ksu_file) into the live policydb after the
+base policy has loaded, and module sepolicy.rule files can inject more (e.g.
+xposed_data). On a stock kernel those labels do not exist, so a context->SID
+conversion returns -EINVAL; here they resolve. The detector reads that
+difference three ways, all from an ordinary app:
+
+  - /proc/self/attr/current write   -> selinux_setprocattr(): a candidate
+    "u:r:ksu:s0" resolves and the transition is denied (EPERM) instead of the
+    stock EINVAL. Classified as "KernelSU context materialized".
+  - /sys/fs/selinux/context write   -> sel_write_context(): the context
+    validity oracle accepts "u:r:ksu:s0" / "u:object_r:ksu_file:s0".
+  - /sys/fs/selinux/access write    -> sel_write_access(): edges naming a
+    ksu/ksu_file/xposed_data type report allowed.
+
+Rather than match type-name strings (fragile, and it would not survive a rename
+of the ksu domain), key off a structural invariant: a type whose value exceeds
+the type count captured the instant the base policy finished loading was
+injected at runtime. selinux_stock_type_ceiling records that count in
+security_load_policy() (both the first-load and the reload path, so a genuine
+policy reload re-arms it before KernelSU re-injects).
+selinux_sid_is_hidden_from_caller() maps a SID to its type value and reports it
+hidden when it is above the ceiling.
+
+WHO it hides from is the crucial part, and the reason for v2 of this patch. The
+gate must fire ONLY for sandboxed apps -- uid >= 10000 with seccomp installed,
+the same heuristic KernelSU's own selinux_hide feature uses. It must NOT fire
+for the root stack's uid-0 machinery. In particular the ReZygisk monitor/daemon,
+zygote and system_server legitimately resolve injected types to set up Zygisk
+injection: rezygisk's sepolicy.rule adds "type zygisk_file" and needs
+"allow zygote ksu {dir search, file read}" (its comment notes "KernelSU renamed
+su context to ksu") to setns into the ksu mount namespace. An earlier revision
+gated on "not the ksu domain", which also hid these injected types from zygote
+and the uid-0 monitor -- zygiskd then failed to start and no app got injected
+(verified: on the old kernel zygiskd ran; with the over-broad gate it did not,
+same boot mode). The uid>=10000+seccomp gate spares all of that while still
+covering a detector, which always probes from an app.
+
+The three query paths return -EINVAL for a hidden SID, exactly as a stock
+kernel does for a context whose type does not exist. No legitimate app validates
+or queries a ksu/ksu_file/xposed_data label, so nothing else is affected, and
+enforcement itself is untouched -- this only sanitises what the query interfaces
+disclose to apps.
+
+Does not touch the "dirty edge" residue on standard domains (e.g.
+zygote -> adb_data_file:dir search), which involves no injected type; that is
+secondary and mostly LineageOS/module policy, not this stack.
+
+Sorts last in patches/kernel/ so it applies after every other patch that edits
+security/selinux/{hooks,selinuxfs}.c and ss/services.c. Guarded by
+CONFIG_KSU_SUSFS, which is already stripped from /proc/config.gz by
+caymanslm-sanitized-ikconfig.patch, so it discloses no new config symbol.
+
+diff --git a/security/selinux/hooks.c b/security/selinux/hooks.c
+index 3659935ceb00..bc5c86348919 100644
+--- a/security/selinux/hooks.c
++++ b/security/selinux/hooks.c
+@@ -95,6 +95,10 @@
+ #include "audit.h"
+ #include "avc_ss.h"
+ 
++#ifdef CONFIG_KSU_SUSFS
++extern bool selinux_sid_is_hidden_from_caller(u32 sid);
++#endif
++
+ /* SECMARK reference count */
+ static atomic_t selinux_secmark_refcount = ATOMIC_INIT(0);
+ 
+@@ -5993,6 +5997,11 @@ static int selinux_setprocattr(struct task_struct *p,
+ 			return error;
+ 	}
+ 
++#ifdef CONFIG_KSU_SUSFS
++	if (selinux_sid_is_hidden_from_caller(sid))
++		return -EINVAL;
++#endif
++
+ 	new = prepare_creds();
+ 	if (!new)
+ 		return -ENOMEM;
+diff --git a/security/selinux/include/security.h b/security/selinux/include/security.h
+index e5bd50cf517f..94b4c3a6ba75 100644
+--- a/security/selinux/include/security.h
++++ b/security/selinux/include/security.h
+@@ -93,6 +93,10 @@ extern int selinux_policycap_alwaysnetwork;
+ int security_mls_enabled(void);
+ 
+ int security_load_policy(void *data, size_t len);
++
++#ifdef CONFIG_KSU_SUSFS
++extern bool selinux_sid_is_hidden_from_caller(u32 sid);
++#endif
+ int security_read_policy(void **data, size_t *len);
+ size_t security_policydb_len(void);
+ 
+diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+index aaf7148921e0..ccddb708e4ea 100644
+--- a/security/selinux/selinuxfs.c
++++ b/security/selinux/selinuxfs.c
+@@ -567,6 +567,13 @@ static ssize_t sel_write_context(struct file *file, char *buf, size_t size)
+ 	if (length)
+ 		goto out;
+ 
++#ifdef CONFIG_KSU_SUSFS
++	if (selinux_sid_is_hidden_from_caller(sid)) {
++		length = -EINVAL;
++		goto out;
++	}
++#endif
++
+ 	length = security_sid_to_context(sid, &canon, &len);
+ 	if (length)
+ 		goto out;
+@@ -796,6 +803,14 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
+ 	if (length)
+ 		goto out;
+ 
++#ifdef CONFIG_KSU_SUSFS
++	if (selinux_sid_is_hidden_from_caller(ssid) ||
++	    selinux_sid_is_hidden_from_caller(tsid)) {
++		length = -EINVAL;
++		goto out;
++	}
++#endif
++
+ 	security_compute_av_user(ssid, tsid, tclass, &avd);
+ 
+ 	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+index 3c97eb7a8c30..42ab72b61e0d 100644
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -47,6 +47,10 @@
+ #include <linux/errno.h>
+ #include <linux/in.h>
+ #include <linux/sched.h>
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/cred.h>
++#include <linux/thread_info.h>
++#endif
+ #include <linux/audit.h>
+ #include <linux/mutex.h>
+ #include <linux/selinux.h>
+@@ -102,6 +106,15 @@ static struct sidtab sidtab;
+ struct policydb policydb;
+ int ss_initialized;
+ 
++#ifdef CONFIG_KSU_SUSFS
++/* caymanslm: type count captured the instant the base policy finishes
++ * loading, before any runtime injection. A SID whose type value exceeds it
++ * was injected into the live policydb afterwards (KernelSU's ksu/ksu_file,
++ * or module sepolicy.rule types such as xposed_data). See
++ * selinux_sid_is_hidden_from_caller() below. */
++u32 selinux_stock_type_ceiling __read_mostly;
++#endif
++
+ /*
+  * The largest sequence number that has been used when
+  * providing an access decision to the access vector cache.
+@@ -2141,6 +2154,9 @@ int security_load_policy(void *data, size_t len)
+ 
+ 		security_load_policycaps();
+ 		ss_initialized = 1;
++#ifdef CONFIG_KSU_SUSFS
++		selinux_stock_type_ceiling = policydb.p_types.nprim;
++#endif
+ 		seqno = ++latest_granting;
+ 		selinux_complete_init();
+ 		avc_ss_reset(seqno);
+@@ -2218,6 +2234,11 @@ int security_load_policy(void *data, size_t len)
+ 	current_mapping_size = map_size;
+ 	seqno = ++latest_granting;
+ 	write_unlock_irq(&policy_rwlock);
++#ifdef CONFIG_KSU_SUSFS
++	/* re-arm after a genuine reload installs a fresh stock policydb;
++	 * KernelSU re-injects its types afterwards, above this new ceiling */
++	selinux_stock_type_ceiling = policydb.p_types.nprim;
++#endif
+ 
+ 	/* Free the old policydb and SID table. */
+ 	policydb_destroy(oldpolicydb);
+@@ -2243,6 +2264,38 @@ int security_load_policy(void *data, size_t len)
+ 	return rc;
+ }
+ 
++#ifdef CONFIG_KSU_SUSFS
++/* True when @sid names a type injected into the live policydb after the
++ * base policy loaded AND the caller is a sandboxed app. The userspace-facing
++ * selinuxfs/procattr query paths use this to make such a SID look
++ * non-existent to app probes (return -EINVAL).
++ *
++ * Gate on the same heuristic as KernelSU's selinux_hide feature -- an app is
++ * uid >= 10000 with seccomp installed. This must NOT fire for the root stack's
++ * own uid-0 machinery: ksud, su, zygote, system_server and the ReZygisk
++ * monitor/daemon legitimately resolve injected types (ksu, zygisk_file, ...)
++ * to set up module injection, and hiding them there breaks Zygisk. A detecto
++ * probing from an app is uid >= 10000 + seccomp, so it is still covered. */
++bool selinux_sid_is_hidden_from_caller(u32 sid)
++{
++	struct context *ctx;
++	bool hidden = false;
++
++	if (!ss_initialized || !selinux_stock_type_ceiling)
++		return false;
++	if (!(test_thread_flag(TIF_SECCOMP) && current_uid().val >= 10000))
++		return false;
++
++	read_lock(&policy_rwlock);
++	ctx = sidtab_search(&sidtab, sid);
++	if (ctx && ctx->type > selinux_stock_type_ceiling)
++		hidden = true;
++	read_unlock(&policy_rwlock);
++
++	return hidden;
++}
++#endif
++
+ size_t security_policydb_len(void)
+ {
+ 	size_t len;
