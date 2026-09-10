@@ -329,6 +329,7 @@ kernel_patch_names=(
   caymanslm-selinux-bounds-null-guard.patch
   caymanslm-selinux-policydb-atomic-alloc.patch
   caymanslm-susfs-spoof-proc-version.patch
+  caymanslm-susfs-spoof-selinux-status-seqno.patch
   caymanslm-susfs-spoof-uts-sysctl.patch
   caymanslm-susfs-v2.2.0-4.9-backport.patch
   caymanslm-susfs-v2.2.0-boot-fixes.patch
