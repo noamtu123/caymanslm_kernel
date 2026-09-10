@@ -1,0 +1,77 @@
+caymanslm: close the SELinux status-page seqno split that leaks KSU to apps
+
+Duck Detector's SELinux DANGER card ("Enforcing with app_zygote seqno split")
+is driven by one pair of numbers an ordinary app reads straight off the mmap'd
+/sys/fs/selinux/status page { version, sequence, enforcing, policyload,
+deny_unknown }. Sampled inside its app_zygote carrier:
+
+    stock  : sequence=0   policyload=0   -> classified "Info"
+    ours   : sequence=10  policyload=0   -> classified "Seqno split" (DANGER)
+
+Confirmed live on-device from a plain shell read
+(`dd if=/sys/fs/selinux/status bs=20 count=1 | od -An -tu4` -> 1 10 1 0), and
+against both stock baselines in tests/baselines/ which read sequence=0.
+
+Root cause is KernelSU, not setenforce. After each sepolicy injection pass
+KernelSU's reset_avc_cache() (drivers/kernelsu/selinux/rules.c) runs:
+
+    avc_ss_reset(0);                     // flush the kernel AVC
+    selnl_notify_policyload(0);          // netlink: tell userspace to reflush
+    selinux_status_update_policyload(0); // mmap status page: same nudge
+
+selinux_status_update_policyload() advances status->sequence by two and writes
+status->policyload = seqno. KernelSU passes seqno == 0, so every call bumps the
+sequence while pinning policyload at 0. Five passes -> sequence=10, policyload=0.
+A genuine policy reload instead passes ++latest_granting (always nonzero), so on
+a stock device sequence and policyload advance together; sequence moving while
+policyload stays 0 is the tell.
+
+Fix (gated on CONFIG_KSU_SUSFS, already stripped from /proc/config.gz by
+caymanslm-sanitized-ikconfig.patch): when selinux_status_update_policyload() is
+called with seqno == 0, substitute status->policyload + 1. The sequence and
+policyload counters then advance together (e.g. sequence=10, policyload=5), which
+is exactly the shape of a normal Android boot that performed several real policy
+reloads -- no split. Seeding from the page's own policyload field keeps it
+monotonic even if a genuine reload (nonzero seqno) runs in between, so it never
+regresses.
+
+Nothing depends on policyload staying 0: the AVC flush KernelSU wants is already
+driven by avc_ss_reset() (kernel side) and selnl_notify_policyload() (the netlink
+message userspace object managers act on), and the sequence bump itself is
+untouched -- so the status-page fast-path notification still fires too.
+
+Touches only security/selinux/ss/status.c, which no other patch modifies, so it
+has no ordering constraint within patches/kernel/.
+
+diff --git a/security/selinux/ss/status.c b/security/selinux/ss/status.c
+index d982365f9..e939658db 100644
+--- a/security/selinux/ss/status.c
++++ b/security/selinux/ss/status.c
+@@ -113,6 +113,27 @@ void selinux_status_update_policyload(int seqno)
+ 	if (selinux_status_page) {
+ 		status = page_address(selinux_status_page);
+ 
++#ifdef CONFIG_KSU_SUSFS
++		/*
++		 * caymanslm: KernelSU's reset_avc_cache() calls this with seqno==0
++		 * after it injects allow rules, only to nudge userspace object
++		 * managers into flushing their AVC. That advances status->sequence
++		 * while pinning status->policyload at 0. An advanced sequence with
++		 * policyload==0 is a "seqno split": app-side detectors read it
++		 * straight off the mmap'd status page as runtime policy manipulation
++		 * (a root signature), because a genuine policy reload advances both
++		 * counters together. Substitute a monotonic value so the pair stays
++		 * consistent -- which is exactly what a normal Android boot (several
++		 * real policy reloads) looks like: sequence and policyload both > 0.
++		 * The sequence bump here, and the separate selnl_notify_policyload()
++		 * netlink message KernelSU sends alongside it, still drive the
++		 * userspace AVC flush, so nothing depends on policyload staying 0.
++		 * Seeding from the page's own field keeps it monotonic even when a
++		 * real reload (nonzero seqno) runs in between.
++		 */
++		if (seqno == 0)
++			seqno = status->policyload + 1;
++#endif
+ 		status->sequence++;
+ 		smp_wmb();
+ 
