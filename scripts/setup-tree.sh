@@ -337,6 +337,7 @@ kernel_patch_names=(
   caymanslm-susfs-z2-selinux-avc-audit-null-guard.patch
   caymanslm-watchdog-bark-window.patch
   caymanslm-zz-nomount-4.9-integration.patch
+  caymanslm-zzz-selinux-hide-injected-types.patch
 )
 # Diagnostic-only kernel patches -- NEVER part of a release. Their C is gated
 # behind CONFIG_CAYMANSLM_* (off unless a diagnostic fragment is merged), but
