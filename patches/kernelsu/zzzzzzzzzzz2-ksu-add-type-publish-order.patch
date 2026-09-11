@@ -70,7 +70,7 @@ a NULL slot denies instead of panicking; this patch stops producing one.
  	if (!new_type_attr_map_array) {
  		pr_err("add_type: alloc type_attr_map_array failed\n");
 -		return false;
-+		goto err_unwind;
++		goto err_free;
  	}
  
  	if (!new_type_val_to_struct) {

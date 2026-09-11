@@ -1,0 +1,44 @@
+diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
+--- a/kernel/selinux/rules.c
++++ b/kernel/selinux/rules.c
+@@ -245,9 +245,24 @@
+ 	 * so the section is genuinely atomic and the lock keeps normal semantics.
+ 	 */
+ 	ksu_policydb_gfp = GFP_ATOMIC;
+-	write_lock(lock);
++	/*
++	 * write_lock_irq(), not write_lock(). policy_rwlock's readers are every
++	 * SELinux permission check -- security_compute_av() and friends, ~25
++	 * read_lock(&policy_rwlock) sites in services.c -- and SELinux calls them
++	 * from softirq context on the network hooks (selinux_socket_sock_rcv_skb).
++	 * Holding the lock for write with interrupts enabled lets an interrupt land
++	 * on the very CPU holding it; that handler's read_lock() then spins forever,
++	 * in interrupt context with IRQs masked, waiting for a write lock its own
++	 * CPU owns. Every other CPU piles up behind it and the box is gone.
++	 *
++	 * Mainline takes this same lock as write_lock_irq() in security_load_policy()
++	 * (security/selinux/ss/services.c) for exactly this reason. The section is
++	 * already GFP_ATOMIC per the patch above, so disabling interrupts across it
++	 * costs nothing.
++	 */
++	write_lock_irq(lock);
+ 	apply_kernelsu_rules_fn((void *)db);
+-	write_unlock(lock);
++	write_unlock_irq(lock);
+ 	ksu_policydb_gfp = GFP_KERNEL;
+ 	goto out_flush;
+ 
+@@ -750,9 +765,11 @@
+ 	 * built-in ruleset.
+ 	 */
+ 	ksu_policydb_gfp = GFP_ATOMIC;
+-	write_lock(lock);
++	/* write_lock_irq() for the same reason as apply_kernelsu_rules(): the
++	 * readers of this lock run in softirq context. */
++	write_lock_irq(lock);
+ 	ret = handle_sepolicy_fn((void *)&ctx);
+-	write_unlock(lock);
++	write_unlock_irq(lock);
+ 	ksu_policydb_gfp = GFP_KERNEL;
+ 	goto out_done;
+ 

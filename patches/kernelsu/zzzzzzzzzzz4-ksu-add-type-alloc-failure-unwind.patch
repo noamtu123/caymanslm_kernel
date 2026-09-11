@@ -1,0 +1,97 @@
+KernelSU: unwind add_type() properly on allocation failure (4.9 flex_array path)
+
+zzzzzzzzzzz2-ksu-add-type-publish-order.patch added the err_unwind label that
+rolls back the speculative `++db->p_types.nprim`, because SELinux readers trust
+nprim and will index type_val_to_struct with it: leaving the counter bumped over
+a slot that was never filled makes the NULL slot permanent, and
+security_bounded_transition()/type_bounds_av() then read it under policy_rwlock.
+
+The 4.9 flex_array branch still had five paths that bypass that unwind:
+
+  * two `return false` on flex_array_alloc() failure (type_val_to_struct and
+    val_to_name_types) -- these leave nprim bumped AND leak whichever of the
+    three new flex_arrays were already allocated;
+  * three `goto err_unwind` on flex_array_prealloc() failure -- these roll the
+    counter back correctly but still leak all three new flex_arrays.
+
+Route all five through a new err_free label that frees the new arrays (guarded,
+flex_array_free() does not take NULL) and then falls into err_unwind.
+
+Reachable only when an allocation fails, which on this tree means a GFP_ATOMIC
+failure: zzzzzzzzzzz-ksu-sepolicy-no-sleep-under-policy-rwlock.patch switches
+these allocations to ksu_policydb_gfp = GFP_ATOMIC for the duration of the
+locked rule-apply, and atomic allocations can and do fail under pressure.
+
+Not a fix for the com.eltavine.duckdetector CPU wedge -- that reproduces with
+every allocation succeeding. This is an independent correctness fix found while
+auditing that path.
+
+Known remaining gap, deliberately not addressed here: on these failure paths the
+type_datum is already in db->p_types via symtab_insert(), so after the nprim
+rollback the symtab still holds an entry whose ->value exceeds nprim. Removing
+it needs a hashtab delete that 4.9's symtab API does not expose cleanly, and the
+window is allocation-failure-only.
+
+--- a/kernel/selinux/sepolicy.c
++++ b/kernel/selinux/sepolicy.c
+@@ -760,32 +760,32 @@
+ 
+ 	if (!new_type_val_to_struct) {
+ 		pr_err("add_type: alloc type_val_to_struct failed\n");
+-		return false;
++		goto err_free;
+ 	}
+ 
+ 	if (!new_val_to_name_types) {
+ 		pr_err("add_type: alloc val_to_name failed\n");
+-		return false;
++		goto err_free;
+ 	}
+ 
+ 	// preallocate so we don't have to worry about the put ever failing
+ 	if (flex_array_prealloc(new_type_attr_map_array, 0, db->p_types.nprim,
+ 				ksu_policydb_gfp | __GFP_ZERO)) {
+ 		pr_err("add_type: prealloc type_attr_map_array failed\n");
+-		goto err_unwind;
++		goto err_free;
+ 	}
+ 
+ 	if (flex_array_prealloc(new_type_val_to_struct, 0, db->p_types.nprim,
+ 				ksu_policydb_gfp | __GFP_ZERO)) {
+ 		pr_err("add_type: prealloc type_val_to_struct_array failed\n");
+-		goto err_unwind;
++		goto err_free;
+ 	}
+ 
+ 	if (flex_array_prealloc(new_val_to_name_types, 0,
+ 				db->symtab[SYM_TYPES].nprim,
+ 				ksu_policydb_gfp | __GFP_ZERO)) {
+ 		pr_err("add_type: prealloc val_to_name_types failed\n");
+-		goto err_unwind;
++		goto err_free;
+ 	}
+ 
+ 	int j;
+@@ -848,6 +848,22 @@
+ 		ebitmap_set_bit(&db->role_val_to_struct[i]->types, value - 1, 1);
+ 	}
+ 	return true;
++
++err_free:
++	/*
++	 * Every failure after the flex_array_alloc()s must release them, or all
++	 * three new arrays leak for the life of the boot.  flex_array_free() does
++	 * not accept NULL, hence the guards.  Falls through to err_unwind so the
++	 * speculative p_types.nprim bump is rolled back too -- otherwise readers
++	 * see a type index whose type_val_to_struct slot was never filled.
++	 */
++	if (new_type_attr_map_array)
++		flex_array_free(new_type_attr_map_array);
++	if (new_type_val_to_struct)
++		flex_array_free(new_type_val_to_struct);
++	if (new_val_to_name_types)
++		flex_array_free(new_val_to_name_types);
++	goto err_unwind;
+ #endif
+ 
+ err_unwind:
