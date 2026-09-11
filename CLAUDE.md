@@ -327,3 +327,13 @@ recovery and ROM.
 - **Commits** authored **and** committed as
   `noamtu123 <noamtu123@users.noreply.github.com>`, with **no** `Co-Authored-By`
   trailer.
+- **Atomic commits.** One logical change per commit; never bundle unrelated work.
+  A past 32k-line mega-commit (`fcfb8f3`) folded four kernel patches, script
+  rewrites and test dumps together and made that history impossible to review or
+  bisect — don't repeat it.
+- **Branches.** `main` is the stable release line: every patch in its
+  `setup-tree.sh` allowlist is believed to boot. `develop` carries experimental /
+  work-in-progress patches (currently the SELinux-hardening set — the
+  status-page-seqno and hide-injected-types patches — whose boot safety is still
+  under investigation). Promote develop → main only after on-device confirmation.
+  Before any history rewrite, tag a backup (`backup/pre-cleanup-<date>`).
