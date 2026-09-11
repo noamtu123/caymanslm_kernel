@@ -91,12 +91,18 @@ echo "Configuring ($KERNEL_DEFCONFIG) ..."
 # limited to the proved KSU/SUSFS fragment; release/debug changes require an
 # explicit profile and can never silently alter a recovery build.
 fragments=("$HERE/config/ksu.fragment" "$HERE/config/nomount.fragment" "$HERE/config/diag.fragment")
-[ -n "${EXTRA_FRAGMENT:-}" ] && fragments+=("$HERE/config/$EXTRA_FRAGMENT")
 if [ "$PROFILE" != "baseline" ]; then
   profile_fragment="$HERE/config/profiles/$PROFILE.fragment"
   [ -f "$profile_fragment" ] || { echo "error: unknown build profile '$PROFILE'" >&2; exit 1; }
   fragments+=("$profile_fragment")
 fi
+# EXTRA_FRAGMENT goes LAST so it wins: later lines override earlier ones in a
+# concatenated .config. It is the explicit, opt-in, per-invocation fragment, so a
+# profile default must not silently defeat it -- release.fragment carries
+# `# CONFIG_FUNCTION_TRACER is not set` for stealth, which used to cancel a
+# diagnostic fragment asking for the tracer and left the build quietly missing
+# the instrument it was made for.
+[ -n "${EXTRA_FRAGMENT:-}" ] && fragments+=("$HERE/config/$EXTRA_FRAGMENT")
 if [ ${#fragments[@]} -gt 0 ]; then
   echo "Merging config fragments (profile: $PROFILE) ..."
   for f in "${fragments[@]}"; do
@@ -179,8 +185,12 @@ if [ "$PROFILE" = "release" ]; then
   )
   for forbidden in "${forbidden_release_config[@]}"; do
     if grep -qx "$forbidden" "$KERNEL_OUT/.config"; then
-      echo "error: release profile must not enable $forbidden" >&2
-      exit 1
+      if [ "${BISECT:-0}" = "1" ]; then
+        echo "  bisect: release profile has $forbidden (DIAGNOSTIC, forbidden check skipped)" >&2
+      else
+        echo "error: release profile must not enable $forbidden" >&2
+        exit 1
+      fi
     fi
   done
 fi

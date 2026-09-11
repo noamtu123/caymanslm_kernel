@@ -1,0 +1,7 @@
+# BISECT STAGE C - KSU + SuSFS, NoMount off.  DIAGNOSTIC ONLY, DO NOT SHIP.
+#
+# Stage order, method and recorded results live in config/BISECT.md.
+# Keep results out of this file so there is one place to read them.
+#
+# Build:  BISECT=1 EXTRA_FRAGMENT=bisect-nonomount.fragment ./scripts/build.sh --profile=release
+# CONFIG_NOMOUNT is not set

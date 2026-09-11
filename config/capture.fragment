@@ -1,0 +1,30 @@
+# pstore crash-capture fragment -- diagnostic only, NEVER shipped.
+#
+# Used with:  EXTRA_FRAGMENT=capture.fragment ./scripts/build.sh --profile=debug
+#
+# Purpose: capture the Duck Detector (and any future) kernel panic backtrace on
+# this device, where it has never been capturable. ramoops/pstore is already
+# compiled in and registers fine (ramoops: attached 0x280000@0xb0000000), but
+# the ring never survived a panic reboot. The reason is NOT (as previously
+# concluded) that the LG bootloader unconditionally wipes the RAM -- a panic
+# already triggers a *warm* reset (msm-poweroff.c: in_panic -> need_warm_reset),
+# which keeps DDR in self-refresh. What actually wipes it is LG's *hidden reset*:
+# lge_set_panic_reason() stamps LGE_RB_MAGIC|LGE_ERR_KERN into IMEM, the SBL sees
+# that magic and does a second, cold reboot to hide the crash, and that cold
+# reboot re-inits DDR.
+#
+# CONFIG_CAYMANSLM_PSTORE_CAPTURE (patches/kernel/caymanslm-pstore-capture-reason.patch)
+# suppresses that magic write so the SBL treats the warm panic reset as an
+# ordinary boot -- the ramoops ring then survives into the next boot and the
+# backtrace is readable from /sys/fs/pstore (console-ramoops-0 / dmesg-ramoops-0).
+#
+# LGE_HANDLE_PANIC stays ON so download_mode stays 0 (the device reboots into
+# Linux instead of sitting in Qualcomm EDL/ramdump mode).
+CONFIG_CAYMANSLM_PSTORE_CAPTURE=y
+
+# Belt-and-braces pstore backends (debug.fragment already sets these; repeated
+# here so the fragment is self-contained if ever paired with another profile).
+CONFIG_PSTORE=y
+CONFIG_PSTORE_RAM=y
+CONFIG_PSTORE_CONSOLE=y
+CONFIG_PSTORE_PMSG=y

@@ -195,6 +195,11 @@ setup_kernelsu() {
     zzzzzzz3-ksu-manager-retry-backoff-fbe-window.patch
     zz2-ksu-boot-completed-search-if-uncrowned.patch
     zzzzzz-ksu-newfstatat-initrc-helper.patch
+    # Release stealth: drop the four sucompat su-access kernel-log fingerprints
+    # (faccessat/stat/execve/execveat). Independent of every other patch here --
+    # it only deletes pr_info() lines in kernel/feature/sucompat.c -- so its
+    # position in this list does not matter.
+    zzzzzzzzzz-ksu-release-remove-sucompat-log-fingerprints.patch
     # zzzzzzzzzz2-ksu-initrc-fbe-late-trigger.patch is deliberately NOT applied
     # any more (dropped 2026-08-02). It added a second
     # `on property:sys.user.0.ce_available=true` trigger firing another
@@ -234,6 +239,42 @@ setup_kernelsu() {
     # app could hard-panic the phone. Must come after the no-sleep patch above,
     # whose GFP_ATOMIC switch is what makes those failures likely.
     zzzzzzzzzzz2-ksu-add-type-publish-order.patch
+    # apply_kernelsu_rules() still held policy_rwlock for WRITE with interrupts
+    # ENABLED. Its readers are every SELinux permission check -- and SELinux
+    # runs them from softirq context on the network hooks. An interrupt landing
+    # on the CPU that holds the write lock makes that CPU spin on read_lock(),
+    # in interrupt context with IRQs masked, waiting for a lock it owns itself;
+    # every other CPU then piles up behind it. Measured signature: one core
+    # powered and executing (it answered an external CoreSight debug halt in
+    # 0ms) but masking interrupts, answering no IPIs, never returning to
+    # userspace, stalling RCU -- the Duck Detector lockup. Mainline takes the
+    # same lock as write_lock_irq() in security_load_policy() for this reason.
+    # Must come after the no-sleep patch, whose GFP_ATOMIC switch is what makes
+    # the section safe to run with interrupts off.
+    #
+    # NOTE (2026-08-18): this does NOT fix the Duck Detector lockup. A kernel
+    # carrying it was built (#29), verified to contain write_lock_irq at both
+    # sites, and tested twice on-device -- Duck still wedged a core and the apps
+    # watchdog still bit at ~15s (lge.bootreason=AppsWdogBark). The patch is kept
+    # because it is correct on its own terms (mainline takes this lock the same
+    # way and the section is already GFP_ATOMIC), not as a fix for that bug.
+    zzzzzzzzzzz3-ksu-sepolicy-policy-rwlock-irq-safe.patch
+    # Five allocation-failure paths in add_type()'s 4.9 flex_array branch still
+    # bypassed the err_unwind above (two bare `return false`, three prealloc
+    # gotos that unwind the counter but leak all three new flex_arrays). Routes
+    # them through an err_free label. Must come after the publish-order patch,
+    # whose err_unwind label it reuses. Independent correctness fix -- NOT a fix
+    # for the Duck Detector lockup.
+    zzzzzzzzzzz4-ksu-add-type-alloc-failure-unwind.patch
+    # selinux_hide's replacement sel_open_handle_status() stored
+    # page_address(fake_status) in filp->private_data, where selinuxfs stores
+    # and consumes a struct page *. mmap() of /sys/fs/selinux/status then ran
+    # page_to_pfn() on a kernel virtual address and remap_pfn_range() mapped
+    # the resulting nonsense PFN into userspace, which hard-locks a Gold core
+    # with interrupts masked -- no stack, no log, just an apps-watchdog reboot.
+    # Any app with TIF_SECCOMP and uid >= 10000 triggers it; Duck Detector's
+    # app zygote does it on every launch.
+    zzzzzzzzzzz5-ksu-selinux-hide-status-page-type.patch
   )
   local ksu_patches=()
   local patch_name
@@ -266,10 +307,94 @@ setup_kernelsu() {
   echo "  manual hooks present"
 }
 
+# Release kernel patches, applied in this exact (alphabetical) order. This used
+# to be a `patches/kernel/*.patch` glob, but a glob silently applies WHATEVER is
+# in the directory -- including diagnostic patches dropped there in passing. That
+# is exactly what the KernelSU side already refuses to do (see ksu_patch_names),
+# and for the same reason: caymanslm-qc-dload-cookie.patch is a diagnostic that
+# rewrites the same msm-poweroff.c regions as the release caymanslm-edl-warm-
+# reset.patch, so a glob applied edl-warm-reset first and then aborted the whole
+# setup when qc-dload-cookie failed to apply. An explicit allowlist makes a
+# release deterministic and lets diagnostics live beside the code without leaking.
+kernel_patch_names=(
+  caymanslm-edl-warm-reset.patch
+  caymanslm-ksu-manual-hooks.patch
+  caymanslm-ksu-newfstat-initrc.patch
+  caymanslm-ksu-newfstatat-initrc.patch
+  caymanslm-ksu-nnp-nosuid-hook.patch
+  caymanslm-ksu-path-umount.patch
+  caymanslm-ksu-selinux-policy-rwlock.patch
+  caymanslm-overlayfs-uniform-ro-st-dev.patch
+  caymanslm-sanitized-ikconfig.patch
+  caymanslm-selinux-bounds-null-guard.patch
+  caymanslm-selinux-policydb-atomic-alloc.patch
+  caymanslm-susfs-spoof-proc-version.patch
+  caymanslm-susfs-spoof-uts-sysctl.patch
+  caymanslm-susfs-v2.2.0-4.9-backport.patch
+  caymanslm-susfs-v2.2.0-boot-fixes.patch
+  caymanslm-susfs-v2.2.0-uname-ksu-domain-gate.patch
+  caymanslm-susfs-z2-selinux-avc-audit-null-guard.patch
+  caymanslm-watchdog-bark-window.patch
+  caymanslm-zz-nomount-4.9-integration.patch
+)
+# Diagnostic-only kernel patches -- NEVER part of a release. Their C is gated
+# behind CONFIG_CAYMANSLM_* (off unless a diagnostic fragment is merged), but
+# they must still be applied to provide that code. Opt in per build with
+#   EXTRA_KERNEL_PATCHES="caymanslm-pstore-capture-reason.patch" ./scripts/setup-tree.sh
+# (paralleling build.sh's EXTRA_FRAGMENT), applied after the release set.
+# NOTE: caymanslm-qc-dload-cookie.patch cannot coexist with the release
+# caymanslm-edl-warm-reset.patch (both rewrite the same msm-poweroff.c regions);
+# build the edldump diagnostic against a tree with edl-warm-reset removed.
+kernel_diag_patch_names=(
+  caymanslm-pstore-capture-reason.patch
+  caymanslm-qc-dload-cookie.patch
+)
+
 if [ "$APPLY_PATCHES" = "1" ]; then
+  # Every .patch in patches/kernel/ must be categorised as release or diagnostic,
+  # so a newly added patch can neither silently ship nor silently vanish.
   shopt -s nullglob
-  patches=("$HERE"/patches/kernel/*.patch)
+  for f in "$HERE"/patches/kernel/*.patch; do
+    b="$(basename "$f")"
+    case " ${kernel_patch_names[*]} ${kernel_diag_patch_names[*]} " in
+      *" $b "*) ;;
+      *) echo "error: uncategorised kernel patch '$b' -- add it to kernel_patch_names" >&2
+         echo "       (release) or kernel_diag_patch_names (diagnostic) in setup-tree.sh" >&2
+         exit 1 ;;
+    esac
+  done
   shopt -u nullglob
+
+  patches=()
+  for name in "${kernel_patch_names[@]}"; do
+    p="$HERE/patches/kernel/$name"
+    [ -f "$p" ] || { echo "error: release kernel patch missing: $name" >&2; exit 1; }
+    patches+=("$p")
+  done
+  # EXTRA_KERNEL_PATCHES: space-separated diagnostic patch basenames, opt-in.
+  for name in ${EXTRA_KERNEL_PATCHES:-}; do
+    p="$HERE/patches/kernel/$name"
+    [ -f "$p" ] || { echo "error: EXTRA_KERNEL_PATCHES entry not found: $name" >&2; exit 1; }
+    echo "  DIAGNOSTIC (opt-in): $name"
+    patches+=("$p")
+  done
+
+  # SKIP_PATCHES=<extended regex> omits matching patch basenames. For bisecting
+  # which of our changes is responsible for a defect: root still works when the
+  # KernelSU-required patches are kept, so a root-detecting app still runs its
+  # full workload and the comparison stays matched. Pair with BISECT=1, which
+  # relaxes build.sh's root-stack config assertions.
+  if [ -n "${SKIP_PATCHES:-}" ]; then
+    kept=()
+    for p in "${patches[@]}"; do
+      if printf '%s' "$(basename "$p")" | grep -Eq "$SKIP_PATCHES"; then
+        echo "  SKIPPING $(basename "$p")  (SKIP_PATCHES)"
+      else
+        kept+=("$p")
+      fi
+    done
+    patches=("${kept[@]}")
+  fi
   if [ ${#patches[@]} -eq 0 ]; then
     echo "No kernel patches to apply."
   else
