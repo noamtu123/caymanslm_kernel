@@ -22,6 +22,23 @@ done
 # Never package a kernel that has not passed the assertions.
 "$HERE/scripts/verify-image.sh" "$IMAGE_GZ_DTB"
 
+# Release-hardening sanity check. build.sh's --profile=release strips the broad
+# symbol/debug disclosure; the default baseline profile keeps the defconfig's
+# CONFIG_KALLSYMS_ALL=y / CONFIG_DEBUG_INFO=y. Those are only stripped by the
+# release profile, and nothing downstream re-checks the artifact -- so a baseline
+# build packaged as a deliverable silently ships less hardening than intended.
+# Warn (do not fail: baseline is a legitimate dev/repro build).
+if [ -f "$KERNEL_OUT/.config" ]; then
+  soft=()
+  grep -qx 'CONFIG_KALLSYMS_ALL=y' "$KERNEL_OUT/.config" && soft+=("CONFIG_KALLSYMS_ALL=y")
+  grep -qx 'CONFIG_DEBUG_INFO=y'   "$KERNEL_OUT/.config" && soft+=("CONFIG_DEBUG_INFO=y")
+  if [ ${#soft[@]} -gt 0 ]; then
+    echo "warning: packaging a build with ${soft[*]} -- this is NOT the hardened" >&2
+    echo "         release profile. If this is a deliverable, rebuild with"        >&2
+    echo "         ./scripts/build.sh --profile=release before packaging."         >&2
+  fi
+fi
+
 ARTIFACTS="$WORKSPACE/artifacts"
 AK3="$THIRD_PARTY/AnyKernel3"
 mkdir -p "$ARTIFACTS" "$THIRD_PARTY"

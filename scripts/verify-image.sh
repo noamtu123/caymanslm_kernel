@@ -136,15 +136,17 @@ else
   fail=1
 fi
 
-# NoMount has no standalone version banner, so assert the option from the
-# IKCONFIG payload embedded in the artifact. This proves nomount.o was selected
-# by the final resolved configuration rather than merely present in the tree.
-if grep -qx 'CONFIG_NOMOUNT=y' "$CONFIG_TEXT"; then
+# NoMount has no standalone version banner, and CONFIG_NOMOUNT is now redacted
+# from the public IKCONFIG view (leaving it there fingerprinted this kernel to a
+# detector reading /proc/config.gz). Prove nomount.o was actually compiled and
+# linked by its .rodata log prefix "NoMount:", which only its source emits --
+# present in the image iff the final resolved config selected the object.
+if grep -qF 'NoMount:' "$SYMS"; then
   note ok "NoMount present"
 elif [ "${BISECT:-0}" = "1" ]; then
-  note WARN "CONFIG_NOMOUNT absent (expected under BISECT)"
+  note WARN "NoMount marker absent (expected under BISECT)"
 else
-  note FAIL "CONFIG_NOMOUNT is absent from the built image"
+  note FAIL "NoMount marker is absent from the built image"
   fail=1
 fi
 

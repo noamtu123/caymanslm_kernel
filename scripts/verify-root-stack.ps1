@@ -31,9 +31,16 @@ function Assert-AtLeast([string]$Name, [long]$Actual, [long]$Minimum) {
 }
 
 $null = Invoke-AdbRoot 'id'
-$now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-$uptime = [double](Invoke-AdbRoot 'cut -d" " -f1 /proc/uptime')
-$bootEpoch = [long]($now - $uptime)
+# Derive the boot epoch from the DEVICE clock, not the host's. The staleness
+# checks below compare against on-device file mtimes (stat -c %Y), which are in
+# device time; mixing in the host clock made those checks false-pass/fail under
+# any clock skew (and the device clock is not NTP-synced until well into boot).
+# Read wall-clock and uptime in one shell invocation so they cannot drift apart.
+$bootLine = Invoke-AdbRoot 'echo "$(date +%s) $(cut -d" " -f1 /proc/uptime)"'
+$parts = @($bootLine -split '\s+' | Where-Object { $_ })
+$devNow = [double]$parts[0]
+$uptime = [double]$parts[1]
+$bootEpoch = [long]($devNow - $uptime)
 
 Assert-Equal 'SuSFS version' (Invoke-AdbRoot '/data/adb/ksu/bin/ksu_susfs show version') 'v2.2.0'
 
