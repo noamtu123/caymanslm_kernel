@@ -59,9 +59,13 @@ The 5.10→4.9 SuSFS backport is **implemented, reproducibly packaged, and boots
   the v2.2 command API. Official KSUN manager (`com.rifsxd.ksunext`) accepted.
 - Enabled: `SUS_PATH`, `SUS_MOUNT`, `SUS_KSTAT`, `SUS_MAP`, open redirect,
   cmdline spoof, uname spoof, AVC-log spoofing, kallsyms filtering.
-- Kernel logging compiled out. `/proc/config.gz` disabled (would disclose all
-  `CONFIG_KSU*` / `CONFIG_KSU_SUSFS*` to unprivileged detectors). Unprivileged
-  `dmesg` restricted; root can still collect logs.
+- Kernel logging compiled out. `/proc/config.gz` is kept **enabled but redacted**
+  — Android VINTF requires the endpoint, so `caymanslm-sanitized-ikconfig.patch`
+  serves a filtered view instead of disabling it: the raw build `.config` would
+  disclose `CONFIG_KSU*` / `CONFIG_KSU_SUSFS*` (and `CONFIG_NOMOUNT` /
+  `CONFIG_CAYMANSLM_*`) to unprivileged detectors, so those namespaces are
+  stripped at build time. Unprivileged `dmesg` restricted; root can still collect
+  logs.
 - The backport adapts the 5.10 namei, mount-ID/IDA, stat/getattr, fsnotify,
   procfs, compat-getdents, remote-memory, and SELinux AVC interfaces to 4.9.
 - Reproducibility gate = clean patch replay + build. On-device detector testing

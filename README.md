@@ -66,10 +66,16 @@ kernel can be RAM-booted and proven before anything is written to flash.
 Everything builds in WSL. There is no CI.
 
 ```sh
-./scripts/setup-tree.sh    # clone kernel + KernelSU Next + SuSFS at pinned refs
-./scripts/build.sh         # -> Image.gz-dtb
-./scripts/package.sh       # -> artifacts/*.zip and a trial boot.img
+./scripts/setup-tree.sh                 # clone kernel + KernelSU Next + SuSFS at pinned refs
+./scripts/build.sh --profile=release    # -> Image.gz-dtb (hardened; use this for a deliverable)
+./scripts/package.sh                    # -> artifacts/*.zip and a trial boot.img
 ```
+
+`--profile=release` strips the broad symbol/debug disclosure (`KALLSYMS_ALL`,
+`DEBUG_INFO`, kprobes, kcore, devmem, …). The bare `./scripts/build.sh` builds
+the `baseline` profile, which keeps them — fine for development and for the
+byte-for-byte reference-config check, but **not** what you want in a shipped
+kernel. `package.sh` warns if you package a baseline build.
 
 After booting a built image, run `./scripts/verify-root-stack.ps1` from
 PowerShell. It checks that the current boot executed KernelSU post-fs-data,

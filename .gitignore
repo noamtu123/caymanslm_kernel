@@ -14,3 +14,6 @@ Thumbs.db
 
 # `>NUL 2>&1` in Windows-authored tooling creates a literal file here
 NUL
+
+# Wedge-trial logcat captures (tests/duck-wedge-trial.sh)
+tests/wedge-runs/
