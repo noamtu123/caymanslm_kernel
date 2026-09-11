@@ -1,0 +1,69 @@
+Subject: [PATCH] ksu: selinux_hide must store a struct page *, not page_address()
+
+Opening /sys/fs/selinux/status from any app wedged a Gold core hard enough to
+trip the apps watchdog and reboot the phone. Reproduced with Duck Detector,
+whose app zygote (uid >= 10000, TIF_SECCOMP set) hits this hook on every
+launch; the phone died ~24 s in, every time.
+
+selinuxfs stores a `struct page *` in filp->private_data and consumes it as
+one -- security/selinux/selinuxfs.c on 4.9:
+
+    static int sel_open_handle_status(struct inode *inode, struct file *filp)
+    {
+            struct page *status = selinux_kernel_status_page();
+            ...
+            filp->private_data = status;            /* struct page * */
+    }
+
+    static int sel_mmap_handle_status(struct file *filp, ...)
+    {
+            struct page *status = filp->private_data;
+            ...
+            return remap_pfn_range(vma, vma->vm_start,
+                                   page_to_pfn(status),   /* <-- here */
+                                   size, vma->vm_page_prot);
+    }
+
+    static ssize_t sel_read_handle_status(struct file *filp, ...)
+    {
+            struct page *status = filp->private_data;
+            return simple_read_from_buffer(buf, count, ppos,
+                                           page_address(status), ...);
+    }
+
+my_sel_open_handle_status() stored page_address(data) instead -- a kernel
+virtual address where a struct page * is expected. mmap() of that file then
+runs page_to_pfn() on a virtual address, producing a nonsense PFN, and
+remap_pfn_range() maps it into userspace. Mapping a PFN that is not valid RAM
+is what killed the core: on arm64 that surfaces as an imprecise external
+abort with interrupts masked, so the CPU stops taking the timer interrupt and
+answers no IPI. Nothing can print its stack, which is why this looked for a
+long time like a silent reboot with no crash log.
+
+The read path is wrong in the same way -- it would apply page_address() to an
+address that has already been translated.
+
+Storing the struct page * is what both callers expect, and it keeps the
+feature working: the fake status page is still handed to unprivileged
+callers, so the hiding behaviour is unchanged.
+
+Evidence, three trials each, Duck test/deterministic, RAM-booted fresh per
+trial, trigger confirmed firing (carrier_spawns=4) on every survival:
+
+  KSU only, unmodified            WEDGED 3/3   (24, 25, 25 s)
+  KSU only, selinux_hide disabled SURVIVED 3/3 (259, 258, 258 s)
+  KSU only, this fix applied      SURVIVED 3/3 (258, 259, 258 s)
+
+diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
+index b47b5311..e7d4964e 100644
+--- a/kernel/feature/selinux_hide.c
++++ b/kernel/feature/selinux_hide.c
+@@ -135,7 +135,7 @@ static int __nocfi my_sel_open_handle_status(struct inode *inode, struct file *f
+ 		   ksu_selinux_hide_is_enabled)) {
+ 		struct page *data = READ_ONCE(fake_status);
+ 		if (data) {
+-			filp->private_data = page_address(data);
++			filp->private_data = data;
+ 			return 0;
+ 		}
+ 	}
