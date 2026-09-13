@@ -1,0 +1,62 @@
+caymanslm: hide the KSU/module-injected dirty sepolicy edges from app probes
+
+Duck Detector's app_zygote carrier reads these allow edges via
+selinux_check_access and flags them as "dirty sepolicy" (baseline-proven: a
+vanilla no-KSU LineageOS kernel denies them; ours allows them):
+  - system_server -> system_server:process execmem  (ReZygisk needs it to
+    inject Zygisk into system_server)
+  - shell -> su:process transition                  (KSU su-compat)
+  - zygote -> adb_data_file:dir search               (KSU rules.c: "we need
+    to umount modules in zygote")
+
+The rules are REQUIRED for the root/Zygisk stack to work, so they must stay in
+the policy. Real enforcement runs through avc_has_perm and is untouched; only
+the app-facing query path (sel_write_access) is spoofed, and only for a
+sandboxed app (uid >= 10000 + seccomp, the same gate selinux_hide uses). A
+legitimate app never probes these edges, so zeroing the decision is safe.
+
+Match on the caller-supplied context strings -- no policydb lookup or lock in
+this path. Sorts after caymanslm-zzz2 (both add to services.c under the same
+CONFIG_KSU_SUSFS block) and after zzz-hide-injected (edits selinuxfs.c too).
+
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -2306,5 +2306,23 @@ u32 ksu_selinux_policy_seqno(void)
+ 	return latest_granting;
+ }
++
++/* True when @scon/@tcon name a KSU/module-injected "dirty" allow edge AND the
++ * caller is a sandboxed app (uid >= 10000 + seccomp). The app-facing SELinux
++ * access query (selinux_check_access -> sel_write_access) uses this to report
++ * the edge denied to detectors; the rule stays in the policy so real
++ * enforcement (avc_has_perm) is unaffected. String match only, no lock. */
++bool selinux_edge_hidden_from_caller(const char *scon, const char *tcon)
++{
++	if (!(test_thread_flag(TIF_SECCOMP) && current_uid().val >= 10000))
++		return false;
++	if (strstr(scon, ":system_server:") && strstr(tcon, ":system_server:"))
++		return true;
++	if (strstr(scon, ":shell:") && strstr(tcon, ":su:"))
++		return true;
++	if (strstr(scon, ":zygote:") && strstr(tcon, ":adb_data_file:"))
++		return true;
++	return false;
++}
+ #endif
+ 
+ size_t security_policydb_len(void)
+diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+--- a/security/selinux/selinuxfs.c
++++ b/security/selinux/selinuxfs.c
+@@ -814,3 +814,10 @@ static ssize_t sel_write_access(struct file *file, char *buf, size_t size)
+ 	security_compute_av_user(ssid, tsid, tclass, &avd);
++#ifdef CONFIG_KSU_SUSFS
++	{
++		extern bool selinux_edge_hidden_from_caller(const char *scon, const char *tcon);
++		if (selinux_edge_hidden_from_caller(scon, tcon))
++			avd.allowed = 0;
++	}
++#endif
+ 
+ 	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
