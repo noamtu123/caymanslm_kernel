@@ -1,0 +1,32 @@
+caymanslm: expose the live SELinux policy sequence for selinux_hide
+
+Duck Detector compares the /sys/fs/selinux/status page (sequence, policyload)
+against the seqno returned in an av_decision from selinux_check_access. On
+this kernel KSU advances status->sequence via reset_avc_cache while the real
+policyload and the decision seqno stay at latest_granting, so an app sees a
+"seqno split". avd_init() stamps av_decision.seqno = latest_granting, so export
+latest_granting and let selinux_hide make the APP-FACING fake status page report
+policyload = latest_granting and sequence = 2*latest_granting -- a consistent
+pair that matches the decision seqno. Real page and policy are untouched.
+
+Sorts after caymanslm-zzz-selinux-hide-injected-types.patch (both edit
+services.c); adds only a new function, no hunk overlap.
+
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -2297,3 +2297,14 @@ bool selinux_sid_is_hidden_from_caller(u32 sid)
+ #endif
+ 
++#ifdef CONFIG_KSU_SUSFS
++/* caymanslm: expose the live policy sequence (latest_granting) -- the same
++ * value avd_init() stamps into av_decision.seqno that an app reads via
++ * selinux_check_access. selinux_hide uses it to make the app-facing fake
++ * /sys/fs/selinux/status policyload/sequence match that seqno (no split). */
++u32 ksu_selinux_policy_seqno(void)
++{
++	return latest_granting;
++}
++#endif
++
+ size_t security_policydb_len(void)

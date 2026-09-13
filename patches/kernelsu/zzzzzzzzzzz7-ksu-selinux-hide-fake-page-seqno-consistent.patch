@@ -1,0 +1,39 @@
+ksu: make selinux_hide fake status page report a consistent seqno/policyload
+
+KSU's reset_avc_cache() advances /sys/fs/selinux/status ->sequence while the
+real policyload and the AVC decision seqno (av_decision.seqno, which avd_init
+stamps from latest_granting) stay put. An app reading the mmap page and cross-
+checking it against selinux_check_access sees a "seqno split" -- a KernelSU
+tell (Duck Detector flags exactly this). initialize_fake_status() memcpy()s the
+real page, so the app-facing fake page inherits the split.
+
+Set the fake page (apps only; uid>=10000+seccomp) to policyload = the live
+policy seqno (ksu_selinux_policy_seqno() == latest_granting == the avd.seqno an
+app reads) and sequence = 2*that. The pair is then consistent AND matches the
+decision seqno. The real page is untouched, so early-boot userspace object
+managers are not perturbed (the real-page spoof hung LineageOS boot).
+
+diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
+--- a/kernel/feature/selinux_hide.c
++++ b/kernel/feature/selinux_hide.c
+@@ -116,4 +116,20 @@ static void initialize_fake_status(void)
+ 		new_status->sequence = 4;
+ 	}
++	/*
++	 * caymanslm: KSU reset_avc_cache() advanced ->sequence while the real
++	 * policyload and the AVC decision seqno stayed at latest_granting, so an
++	 * app reading this page (and cross-checking selinux_check_access) sees a
++	 * "seqno split". Present a consistent pair in the app-facing fake page
++	 * only: policyload = the live policy seqno (= the avd.seqno an app gets)
++	 * and sequence = 2*that. The real page is untouched so boot is safe.
++	 */
++	{
++		extern u32 ksu_selinux_policy_seqno(void);
++		u32 lg = ksu_selinux_policy_seqno();
++		if (lg) {
++			new_status->policyload = lg;
++			new_status->sequence = lg << 1;
++		}
++	}
+ 	
+ 	WRITE_ONCE(fake_status, new_page);

@@ -275,6 +275,11 @@ setup_kernelsu() {
     # Any app with TIF_SECCOMP and uid >= 10000 triggers it; Duck Detector's
     # app zygote does it on every launch.
     zzzzzzzzzzz5-ksu-selinux-hide-status-page-type.patch
+    # Normalise the app-facing fake status page's policyload to match its
+    # sequence, closing the seqno-split leak for apps WITHOUT touching the real
+    # /sys/fs/selinux/status page (the real-page spoof hung LineageOS boot). Must
+    # sort after zzzzzzzzzzz5, whose selinux_hide.c edits it lands beside.
+    zzzzzzzzzzz7-ksu-selinux-hide-fake-page-seqno-consistent.patch
   )
   local ksu_patches=()
   local patch_name
@@ -336,6 +341,18 @@ kernel_patch_names=(
   caymanslm-susfs-z2-selinux-avc-audit-null-guard.patch
   caymanslm-watchdog-bark-window.patch
   caymanslm-zz-nomount-4.9-integration.patch
+  caymanslm-zzz-selinux-hide-injected-types.patch
+  # Exposes latest_granting so selinux_hide's fake status page can report a
+  # policyload/sequence consistent with the AVC decision seqno apps read (kills
+  # the residual "seqno split" Duck flagged). Adds a function to services.c; must
+  # sort after the hide-injected-types patch, which also edits services.c.
+  caymanslm-zzz2-selinux-export-policy-seqno.patch
+  # Reports the KSU/module-injected "dirty" allow edges (system_server execmem,
+  # shell->su, zygote->adb_data_file) as denied to app SELinux access probes,
+  # while keeping the rules in the policy so real enforcement is unaffected.
+  # Adds to services.c (under zzz2's CONFIG_KSU_SUSFS block) and hooks
+  # selinuxfs.c; must sort after zzz2 and zzz-hide-injected.
+  caymanslm-zzz3-selinux-hide-dirty-edges.patch
 )
 # Diagnostic-only kernel patches -- NEVER part of a release. Their C is gated
 # behind CONFIG_CAYMANSLM_* (off unless a diagnostic fragment is merged), but
