@@ -347,6 +347,12 @@ kernel_patch_names=(
   # the residual "seqno split" Duck flagged). Adds a function to services.c; must
   # sort after the hide-injected-types patch, which also edits services.c.
   caymanslm-zzz2-selinux-export-policy-seqno.patch
+  # Reports the KSU/module-injected "dirty" allow edges (system_server execmem,
+  # shell->su, zygote->adb_data_file) as denied to app SELinux access probes,
+  # while keeping the rules in the policy so real enforcement is unaffected.
+  # Adds to services.c (under zzz2's CONFIG_KSU_SUSFS block) and hooks
+  # selinuxfs.c; must sort after zzz2 and zzz-hide-injected.
+  caymanslm-zzz3-selinux-hide-dirty-edges.patch
 )
 # Diagnostic-only kernel patches -- NEVER part of a release. Their C is gated
 # behind CONFIG_CAYMANSLM_* (off unless a diagnostic fragment is merged), but
