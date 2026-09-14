@@ -312,15 +312,9 @@ setup_kernelsu() {
   echo "  manual hooks present"
 }
 
-# Release kernel patches, applied in this exact (alphabetical) order. This used
-# to be a `patches/kernel/*.patch` glob, but a glob silently applies WHATEVER is
-# in the directory -- including diagnostic patches dropped there in passing. That
-# is exactly what the KernelSU side already refuses to do (see ksu_patch_names),
-# and for the same reason: caymanslm-qc-dload-cookie.patch is a diagnostic that
-# rewrites the same msm-poweroff.c regions as the release caymanslm-edl-warm-
-# reset.patch, so a glob applied edl-warm-reset first and then aborted the whole
-# setup when qc-dload-cookie failed to apply. An explicit allowlist makes a
-# release deterministic and lets diagnostics live beside the code without leaking.
+# Release kernel patches, applied in this exact (alphabetical) order. An explicit
+# allowlist (not a `patches/kernel/*.patch` glob) keeps a release deterministic:
+# every patch is named here and setup errors on any uncategorised file.
 kernel_patch_names=(
   caymanslm-edl-warm-reset.patch
   caymanslm-ksu-manual-hooks.patch
@@ -354,18 +348,9 @@ kernel_patch_names=(
   # selinuxfs.c; must sort after zzz2 and zzz-hide-injected.
   caymanslm-zzz3-selinux-hide-dirty-edges.patch
 )
-# Diagnostic-only kernel patches -- NEVER part of a release. Their C is gated
-# behind CONFIG_CAYMANSLM_* (off unless a diagnostic fragment is merged), but
-# they must still be applied to provide that code. Opt in per build with
-#   EXTRA_KERNEL_PATCHES="caymanslm-pstore-capture-reason.patch" ./scripts/setup-tree.sh
-# (paralleling build.sh's EXTRA_FRAGMENT), applied after the release set.
-# NOTE: caymanslm-qc-dload-cookie.patch cannot coexist with the release
-# caymanslm-edl-warm-reset.patch (both rewrite the same msm-poweroff.c regions);
-# build the edldump diagnostic against a tree with edl-warm-reset removed.
-kernel_diag_patch_names=(
-  caymanslm-pstore-capture-reason.patch
-  caymanslm-qc-dload-cookie.patch
-)
+# Diagnostic-only kernel patches (none currently) -- NEVER part of a release.
+# Opt in per build with EXTRA_KERNEL_PATCHES="<name>" ./scripts/setup-tree.sh
+kernel_diag_patch_names=()
 
 if [ "$APPLY_PATCHES" = "1" ]; then
   # Every .patch in patches/kernel/ must be categorised as release or diagnostic,

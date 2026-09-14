@@ -90,8 +90,8 @@ else
 fi
 
 # --- root stack --------------------------------------------------------------
-# BISECT=1 builds deliberately drop parts of the root stack to isolate a bug (see
-# config/bisect-*.fragment). The SuSFS assertions below are then expected to fail,
+# BISECT=1 builds deliberately drop parts of the root stack to isolate a bug (via
+# SKIP_PATCHES or an EXTRA_FRAGMENT). The SuSFS assertions below are then expected to fail,
 # so downgrade them to warnings -- everything else (version string, EDL marker,
 # public config redaction) is still enforced, because a diagnostic image still gets
 # RAM-booted or flashed on the real phone.

@@ -6,17 +6,10 @@
 # untrusted app sees nothing; `dmesg` via su shows it all. /proc/config.gz is
 # redacted (verify-image.sh), so these options don't advertise themselves either.
 #
-# Scope note on the Duck Detector (com.eltavine.duckdetector) crash that
-# motivated this file: it turned out to be a genuine panic() that cold-resets the
-# phone, NOT a lockup and NOT a recoverable oops -- the soft/hard-lockup
-# detectors below never fired for it, and it reboots regardless of PANIC_ON_OOPS.
-# It is also un-capturable on this device: LG's bootloader wipes the ramoops RAM
-# on every reset, lge.crash_handler/lge.hiddenreset are bootloader params we
-# cannot override, and 4.9 netconsole is impossible here (no ndo_poll_controller
-# on wlan0 or the u_ether gadget). That investigation is closed and handed to
-# upstream -- see tests/baselines/duckdetector-kernel-panic-UPSTREAM-REPORT.md
-# and [[duckdetector-kernel-panic-capture]]. The detectors below are kept not for
-# that bug but as general, root-only aids for future hook development.
+# The detectors below are general, root-only aids for hook development. This
+# device cannot capture a crash log -- LG's bootloader wipes the ramoops RAM on
+# every reset, so a panic-reboot leaves pstore empty; read the ring live with
+# `dmesg` (--profile=debug flips PANIC_ON_OOPS off so the box survives the fault).
 
 # Soft/hard-lockup detector, WARN-only. A CPU spinning in-kernel (a hook stuck on
 # a lock, a deadlock) prints "BUG: soft lockup - CPU#N stuck ..." plus a full call

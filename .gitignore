@@ -17,3 +17,6 @@ NUL
 
 # Wedge-trial logcat captures (tests/duck-wedge-trial.sh)
 tests/wedge-runs/
+
+# Local engineering notes — kept out of the public repo
+/CLAUDE.md
