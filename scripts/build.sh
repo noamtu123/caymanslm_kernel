@@ -114,12 +114,22 @@ if [ ${#fragments[@]} -gt 0 ]; then
   "${KMAKE[@]}" olddefconfig
 fi
 
-# Branch backslashxx-ksu, phase 1: the root stack is bare backslashxx with
-# syscall-table hooking. The SuSFS assertions (CONFIG_KSU_SUSFS*) return in
-# phase 2 and CONFIG_NOMOUNT in phase 3, once those are ported onto backslashxx.
+# Branch backslashxx-ksu: backslashxx with syscall-table hooking + SuSFS (phase 2,
+# ported via patches/kernelsu/bxx-susfs-v2.2.0.patch). CONFIG_NOMOUNT returns in
+# phase 3.
 required_root_config=(
   CONFIG_KSU
   CONFIG_KSU_TAMPER_SYSCALL_TABLE
+  CONFIG_KSU_SUSFS
+  CONFIG_KSU_SUSFS_SUS_PATH
+  CONFIG_KSU_SUSFS_SUS_MOUNT
+  CONFIG_KSU_SUSFS_SUS_KSTAT
+  CONFIG_KSU_SUSFS_SUS_MAP
+  CONFIG_KSU_SUSFS_OPEN_REDIRECT
+  CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+  CONFIG_KSU_SUSFS_SPOOF_UNAME
+  CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+  CONFIG_KSU_SUSFS_ENABLE_LOG
   CONFIG_SECURITY_DMESG_RESTRICT
   CONFIG_LOCKUP_DETECTOR
   CONFIG_DETECT_HUNG_TASK

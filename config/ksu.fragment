@@ -12,11 +12,20 @@ CONFIG_KSU_LSM_SECURITY_HOOKS=y
 CONFIG_KSU_FEATURE_SULOG=y
 CONFIG_KSU_FEATURE_ADBROOT=y
 #
-# SuSFS: backslashxx has NO built-in SuSFS (no CONFIG_KSU_SUSFS symbols). It is
-# re-added in phase 2 of the migration by porting susfs4ksu's KSU-side
-# integration onto backslashxx's tree; the kernel-side backport (fs/susfs.c …)
-# is fork-independent and already applied via patches/kernel. Until then this
-# branch builds WITHOUT the SuSFS hiding stack.
+# SuSFS (phase 2): backslashxx has no built-in SuSFS. The KSU-side bridge
+# (patches/kernelsu/bxx-susfs-v2.2.0.patch) adds these CONFIG_KSU_SUSFS* symbols
+# and wires them to the fork-independent kernel-side backport. Same feature set
+# the KSU-Next build shipped.
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+CONFIG_KSU_SUSFS_ENABLE_LOG=y
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_KSU_SUSFS_SUS_MAP=y
 #
 # Android's VINTF checker requires /proc/config.gz on this device. The kernel
 # patch caymanslm-sanitized-ikconfig.patch keeps this endpoint available while

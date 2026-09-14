@@ -174,6 +174,18 @@ setup_kernelsu() {
     exit 1
   fi
 
+  # KSU-side patches applied ONTO backslashxx (phase 2+). Unlike the KSU-Next
+  # era there is no wildcard replay -- each patch is named. bxx-susfs bridges the
+  # fork-independent kernel-side SuSFS backport to backslashxx's supercall /
+  # selinux / setuid / init.
+  local bxx_ksu_patch_names=(
+    bxx-susfs-v2.2.0.patch
+  )
+  local pn
+  for pn in "${bxx_ksu_patch_names[@]}"; do
+    apply_ksu_patch "$ksu_dir" "$HERE/patches/kernelsu/$pn"
+  done
+
   # drivers/kernelsu -> <ksu>/kernel, relative so the tree stays relocatable.
   ln -sfn "$(realpath --relative-to="$drivers" "$ksu_dir/kernel")" "$drivers/kernelsu"
 
@@ -207,6 +219,13 @@ kernel_patch_names=(
   caymanslm-overlayfs-uniform-ro-st-dev.patch
   caymanslm-sanitized-ikconfig.patch         # keeps /proc/config.gz for VINTF, redacts CONFIG_KSU*
   caymanslm-selinux-bounds-null-guard.patch  # kernel-tree SELinux hardening, KSU-independent
+  # PHASE 2 -- SuSFS kernel-side (fork-independent: fs/susfs.c, fs/*, mm, avc). The
+  # KSU-side bridge onto backslashxx is applied separately in setup_kernelsu. These
+  # sort after selinux-bounds and before watchdog; boot-fixes and the avc-audit
+  # null-guard sort after the backport whose files they extend.
+  caymanslm-susfs-v2.2.0-4.9-backport.patch
+  caymanslm-susfs-v2.2.0-boot-fixes.patch
+  caymanslm-susfs-z2-selinux-avc-audit-null-guard.patch
   caymanslm-watchdog-bark-window.patch
 )
 # Parked for later migration phases -- categorised so the allowlist check passes,
@@ -223,10 +242,7 @@ kernel_bxx_deferred_patch_names=(
   caymanslm-selinux-policydb-atomic-alloc.patch
   caymanslm-susfs-spoof-proc-version.patch
   caymanslm-susfs-spoof-uts-sysctl.patch
-  caymanslm-susfs-v2.2.0-4.9-backport.patch
-  caymanslm-susfs-v2.2.0-boot-fixes.patch
   caymanslm-susfs-v2.2.0-uname-ksu-domain-gate.patch
-  caymanslm-susfs-z2-selinux-avc-audit-null-guard.patch
   caymanslm-zz-nomount-4.9-integration.patch
   caymanslm-zzz-selinux-hide-injected-types.patch
   caymanslm-zzz2-selinux-export-policy-seqno.patch
