@@ -58,6 +58,17 @@ fi
 fail=0
 note() { printf '  %-6s %s\n' "$1" "$2"; }
 
+# Branch backslashxx-ksu: SuSFS and NoMount are re-introduced in later migration
+# phases. Gate their assertions on whether the resolved build config actually
+# selected them, so a phase-1 image (bare backslashxx) verifies cleanly while the
+# checks switch back on automatically once phase 2/3 enable the options. The
+# image-inspection principle is unchanged -- the .config only decides WHICH
+# markers to require; each marker is still proven by inspecting the image.
+REAL_CONFIG="$KERNEL_OUT/.config"
+cfg_on() { [ -f "$REAL_CONFIG" ] && grep -qx "$1=y" "$REAL_CONFIG"; }
+SUSFS_ON=0;  cfg_on CONFIG_KSU_SUSFS && SUSFS_ON=1
+NOMOUNT_ON=0; cfg_on CONFIG_NOMOUNT && NOMOUNT_ON=1
+
 # --- version -----------------------------------------------------------------
 VERSION="$(grep -m1 '^Linux version ' "$SYMS" || true)"
 if [ -z "$VERSION" ]; then
@@ -99,7 +110,9 @@ if [ "${BISECT:-0}" = "1" ]; then
   note WARN "BISECT=1: SuSFS assertions downgraded to warnings -- DIAGNOSTIC IMAGE, DO NOT SHIP"
 fi
 
-if grep -qF "$SUSFS_VERSION" "$SYMS"; then
+if [ "$SUSFS_ON" != "1" ]; then
+  note skip "SuSFS not configured (phase-gated) -- SuSFS assertions skipped"
+elif grep -qF "$SUSFS_VERSION" "$SYMS"; then
   note ok "SuSFS $SUSFS_VERSION present"
 elif [ "${BISECT:-0}" = "1" ]; then
   note WARN "SuSFS $SUSFS_VERSION marker absent (expected under BISECT)"
@@ -141,7 +154,9 @@ fi
 # detector reading /proc/config.gz). Prove nomount.o was actually compiled and
 # linked by its .rodata log prefix "NoMount:", which only its source emits --
 # present in the image iff the final resolved config selected the object.
-if grep -qF 'NoMount:' "$SYMS"; then
+if [ "$NOMOUNT_ON" != "1" ]; then
+  note skip "NoMount not configured (phase-gated) -- NoMount assertion skipped"
+elif grep -qF 'NoMount:' "$SYMS"; then
   note ok "NoMount present"
 elif [ "${BISECT:-0}" = "1" ]; then
   note WARN "NoMount marker absent (expected under BISECT)"
@@ -164,16 +179,20 @@ required_susfs_config=(
   CONFIG_KSU_SUSFS_OPEN_REDIRECT
   CONFIG_KSU_SUSFS_SUS_MAP
 )
-for symbol in "${required_susfs_config[@]}"; do
-  if grep -qF "$symbol" "$SYMS"; then
-    note ok "$symbol bridge present"
-  elif [ "${BISECT:-0}" = "1" ]; then
-    note WARN "$symbol bridge marker absent (expected under BISECT)"
-  else
-    note FAIL "$symbol bridge marker absent"
-    fail=1
-  fi
-done
+if [ "$SUSFS_ON" != "1" ]; then
+  note skip "SuSFS not configured (phase-gated) -- bridge-marker checks skipped"
+else
+  for symbol in "${required_susfs_config[@]}"; do
+    if grep -qF "$symbol" "$SYMS"; then
+      note ok "$symbol bridge present"
+    elif [ "${BISECT:-0}" = "1" ]; then
+      note WARN "$symbol bridge marker absent (expected under BISECT)"
+    else
+      note FAIL "$symbol bridge marker absent"
+      fail=1
+    fi
+  done
+fi
 
 if [ "$fail" != "0" ]; then
   echo "verify-image: FAILED" >&2

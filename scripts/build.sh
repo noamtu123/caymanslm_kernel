@@ -90,7 +90,9 @@ echo "Configuring ($KERNEL_DEFCONFIG) ..."
 # without forking the defconfig itself.  The default baseline is deliberately
 # limited to the proved KSU/SUSFS fragment; release/debug changes require an
 # explicit profile and can never silently alter a recovery build.
-fragments=("$HERE/config/ksu.fragment" "$HERE/config/nomount.fragment" "$HERE/config/diag.fragment")
+# Branch backslashxx-ksu, phase 1: nomount.fragment is dropped from the baseline
+# (the NoMount patch is parked until phase 3). SuSFS returns in phase 2.
+fragments=("$HERE/config/ksu.fragment" "$HERE/config/diag.fragment")
 if [ "$PROFILE" != "baseline" ]; then
   profile_fragment="$HERE/config/profiles/$PROFILE.fragment"
   [ -f "$profile_fragment" ] || { echo "error: unknown build profile '$PROFILE'" >&2; exit 1; }
@@ -112,21 +114,13 @@ if [ ${#fragments[@]} -gt 0 ]; then
   "${KMAKE[@]}" olddefconfig
 fi
 
+# Branch backslashxx-ksu, phase 1: the root stack is bare backslashxx with
+# syscall-table hooking. The SuSFS assertions (CONFIG_KSU_SUSFS*) return in
+# phase 2 and CONFIG_NOMOUNT in phase 3, once those are ported onto backslashxx.
 required_root_config=(
   CONFIG_KSU
-  CONFIG_KSU_MANUAL_HOOK
-  CONFIG_KSU_SUSFS
-  CONFIG_KSU_SUSFS_SUS_PATH
-  CONFIG_KSU_SUSFS_SUS_MOUNT
-  CONFIG_KSU_SUSFS_SUS_KSTAT
-  CONFIG_KSU_SUSFS_SUS_MAP
-  CONFIG_KSU_SUSFS_OPEN_REDIRECT
-  CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-  CONFIG_KSU_SUSFS_SPOOF_UNAME
-  CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-  CONFIG_KSU_SUSFS_ENABLE_LOG
+  CONFIG_KSU_TAMPER_SYSCALL_TABLE
   CONFIG_SECURITY_DMESG_RESTRICT
-  CONFIG_NOMOUNT
   CONFIG_LOCKUP_DETECTOR
   CONFIG_DETECT_HUNG_TASK
 )

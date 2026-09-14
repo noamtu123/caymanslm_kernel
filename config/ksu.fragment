@@ -1,33 +1,30 @@
-# KernelSU Next — caymanslm (4.9.337, non-GKI)
+# backslashxx/KernelSU — caymanslm (4.9.337, non-GKI)   [branch backslashxx-ksu]
 #
-# Manual hooks, not kprobes. This kernel is pre-4.14 and has no CONFIG_KPROBES;
-# KSU_KPROBES_HOOK additionally requires >= 5.10, so it is not an option here.
-# The hook call sites live in patches/kernel/caymanslm-ksu-manual-hooks.patch.
+# Hooking: syscall-table hijack, NOT kprobes and NOT manual fs/*.c hooks. This
+# kernel is pre-4.14 with no CONFIG_KPROBES; backslashxx's KSU_TAMPER_SYSCALL_TABLE
+# is documented "Recommended 3.0 ~ 4.14" and needs no source hooks at all, which
+# is why the KSU-Next-era caymanslm-ksu-manual-hooks.patch is dropped on this
+# branch. Verified to build on this tree 2026-09-14.
 CONFIG_KSU=y
-CONFIG_KSU_MANUAL_HOOK=y
-CONFIG_KSU_SUSFS=y
-CONFIG_KSU_SUSFS_SUS_PATH=y
-CONFIG_KSU_SUSFS_SUS_MOUNT=y
-CONFIG_KSU_SUSFS_SUS_KSTAT=y
-CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-# SuSFS log output goes to the kernel ring buffer (printk), which this build
-# gates behind dmesg_restrict=1 + kptr_restrict=2, and the module's susfs.log
-# lives under /data/adb (0700 root). Neither surface is reachable by an
-# unprivileged app -- the threat we actually hide from -- so disabling this buys
-# no stealth against apps while costing all boot-time visibility into what SuSFS
-# is doing (and leaving the susfs4ksu WebUI with an empty log). Keep it on.
-CONFIG_KSU_SUSFS_ENABLE_LOG=y
-CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-CONFIG_KSU_SUSFS_SUS_MAP=y
-# Android's VINTF checker requires /proc/config.gz on this device.  The kernel
+CONFIG_KSU_TAMPER_SYSCALL_TABLE=y
+# LSM security hooks (default y upstream) — used for setuid/umount/sucompat gate.
+CONFIG_KSU_LSM_SECURITY_HOOKS=y
+CONFIG_KSU_FEATURE_SULOG=y
+CONFIG_KSU_FEATURE_ADBROOT=y
+#
+# SuSFS: backslashxx has NO built-in SuSFS (no CONFIG_KSU_SUSFS symbols). It is
+# re-added in phase 2 of the migration by porting susfs4ksu's KSU-side
+# integration onto backslashxx's tree; the kernel-side backport (fs/susfs.c …)
+# is fork-independent and already applied via patches/kernel. Until then this
+# branch builds WITHOUT the SuSFS hiding stack.
+#
+# Android's VINTF checker requires /proc/config.gz on this device. The kernel
 # patch caymanslm-sanitized-ikconfig.patch keeps this endpoint available while
 # embedding a public config view with CONFIG_KSU* entries removed.
 CONFIG_IKCONFIG=y
 CONFIG_IKCONFIG_PROC=y
 CONFIG_SECURITY_DMESG_RESTRICT=y
 
-# CONFIG_KPROBES is deliberately left unset. Beyond being unnecessary, the
-# upstream guidance is to keep it off with manual hooks so a volume-down press
+# CONFIG_KPROBES is deliberately left unset. With syscall-table hooking it is
+# unnecessary, and upstream guidance is to keep it off so a volume-key press
 # after boot cannot accidentally trip safe mode via a second input hook.

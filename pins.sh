@@ -17,23 +17,24 @@ KERNEL_REF="efa8458f79dffeb380d43b38b9403407f87d9f05"
 KERNEL_BRANCH="lineage-22.2"          # branch containing KERNEL_REF, for fetch
 KERNEL_DEFCONFIG="lineageos_caymanslm_defconfig"
 
-# ---------------------------------------------------------- KernelSU Next ---
-# The kernel is non-GKI, pre-4.14 and has no CONFIG_KPROBES, so the `legacy`
-# line -- the one maintained for old non-GKI kernels -- is the only viable one,
-# and manual hooks are mandatory.
+# ------------------------------------------------------ backslashxx KernelSU ---
+# BRANCH backslashxx-ksu: the root stack is switched from KernelSU-Next to
+# backslashxx/KernelSU -- a manual-hook / wide-kernel fork (its docs: "k3.0 ~
+# mainline, manual hooking supported and kept forever", min GCC 4.9/Clang 10).
+# It self-adapts to this 4.9.337 non-GKI tree via compile-time compat detection
+# and, crucially, offers CONFIG_KSU_TAMPER_SYSCALL_TABLE (syscall-table hijack,
+# "Recommended 3.0~4.14") so NO manual fs/*.c hook patch is needed here -- unlike
+# KSU-Next legacy. Base build proven on this tree 2026-09-14.
 #
-# Pinned at the legacy branch head. Operator preference is latest-on-both, and
-# legacy HEAD is also the right structural match for maintained SuSFS: it
-# carries the restructured layout (kernel/core, kernel/feature, kernel/hook,
-# kernel/policy, kernel/supercall) that susfs4ksu's current KernelSU-side patch
-# targets -- 28 of the 29 files that patch touches exist here.
-#
-# NOT used: v3.1.0-legacy-susfs. It ships SUSFS in-tree, which looked like a
-# shortcut, but it expects a v2.x kernel side and is an older release. See
-# CLAUDE.md for the measurements.
-KSU_URL="https://github.com/KernelSU-Next/KernelSU-Next"
-KSU_BRANCH="legacy"
-KSU_REF="53791c92bff13d62338f29cc9da035a37652ca91"   # 2026-07-20
+# "Latest" == master HEAD, which is also tag `32630` and reports KSU_VERSION=32630
+# (hardcoded in kernel/Makefile, NOT git-count-derived). backslashxx FORCE-PUSHES
+# master/staging, so a pinned SHA can be orphaned and become unfetchable -- setup
+# asserts the SHA is present and fails loudly if a force-push has removed it,
+# rather than silently drifting. Re-pin on update.
+KSU_URL="https://github.com/backslashxx/KernelSU"
+KSU_BRANCH="master"
+KSU_REF="73f2732829c1187dc2188dbec854cf45782a964e"   # master == tag 32630 (v3.3.0+), 2026-09-14
+KSU_VERSION="32630"
 
 # ----------------------------------------------------------------- SuSFS ---
 # Kernel-side only: userspace policy/tooling remains a separately installed
@@ -84,7 +85,10 @@ STOCK_BOOT_IMG="${STOCK_BOOT_IMG:-$SIBLING_REPO/artifacts/edl-backup/boot_b-stoc
 # The active, reproducible SuSFS v2.2 replay tree.  Keeping this explicit
 # avoids silently building the older /home/.../caymanslm-kernel tree, whose
 # KernelSU/SuSFS integration is not the one being tested on the device.
-WORKSPACE="${WORKSPACE:-$HOME/caymanslm-kernel/susfs-v2-replay}"
+# Branch backslashxx-ksu builds in its OWN workspace so the known-good KSU-Next
+# v1.1 tree (susfs-v2-replay) the device runs is never clobbered by this
+# experiment. Set WORKSPACE explicitly to override.
+WORKSPACE="${WORKSPACE:-$HOME/caymanslm-kernel/backslashxx}"
 KERNEL_SRC="$WORKSPACE/src"
 KERNEL_OUT="$WORKSPACE/build"
 THIRD_PARTY="$WORKSPACE/third_party"
