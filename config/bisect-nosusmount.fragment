@@ -1,7 +1,0 @@
-# BISECT STAGE D - full stack, SUS_MOUNT off.  DIAGNOSTIC ONLY, DO NOT SHIP.
-#
-# Stage order, method and recorded results live in config/BISECT.md.
-# Keep results out of this file so there is one place to read them.
-#
-# Build:  BISECT=1 EXTRA_FRAGMENT=bisect-nosusmount.fragment ./scripts/build.sh --profile=release
-# CONFIG_KSU_SUSFS_SUS_MOUNT is not set
