@@ -227,6 +227,10 @@ kernel_patch_names=(
   caymanslm-susfs-v2.2.0-boot-fixes.patch
   caymanslm-susfs-z2-selinux-avc-audit-null-guard.patch
   caymanslm-watchdog-bark-window.patch
+  # PHASE 3 -- NoMount. Self-contained fs/nomount/ engine (no KSU dependency);
+  # shares fs/Kconfig + fs/Makefile with SuSFS so it MUST sort last, after the
+  # susfs backport that adds the fs/Makefile susfs.o line it contexts against.
+  caymanslm-zz-nomount-4.9-integration.patch
 )
 # Parked for later migration phases -- categorised so the allowlist check passes,
 # but NOT applied on this branch. KSU-Next-specific fixes (manual hooks, initrc,
@@ -243,7 +247,6 @@ kernel_bxx_deferred_patch_names=(
   caymanslm-susfs-spoof-proc-version.patch
   caymanslm-susfs-spoof-uts-sysctl.patch
   caymanslm-susfs-v2.2.0-uname-ksu-domain-gate.patch
-  caymanslm-zz-nomount-4.9-integration.patch
   caymanslm-zzz-selinux-hide-injected-types.patch
   caymanslm-zzz2-selinux-export-policy-seqno.patch
   caymanslm-zzz3-selinux-hide-dirty-edges.patch
