@@ -6,8 +6,8 @@ Later: voltage / clock / thermal tuning.
 
 Target ROMs, priority order:
 
-1. **LineageOS 22.2** — main target (not installed yet).
-2. **Stock Android 12**, firmware `G91030a` (`SKQ1.211103.001`) — on the device now.
+1. **LineageOS 22.2** — main target, installed on slot B (active).
+2. **Stock Android 12**, firmware `G91030a` (`SKQ1.211103.001`) — preserved on slot A.
 
 ## Device
 
@@ -16,8 +16,9 @@ and device). Any script touching the phone must refuse unless
 `ro.product.device` / `fastboot getvar product` is `caymanslm`, like the sibling
 repo's EDL script.
 
-- A/B device. Bootloader unlocked. Active slot `_a`.
-- Stock Android 12 (`G91030a`), **unrooted** — no Magisk, no `su`.
+- A/B device. Bootloader unlocked. Active slot `_b` (LineageOS 22.2).
+- LineageOS 22.2 on slot B, stock Android 12 (`G91030a`) on slot A; both run this
+  kernel with KernelSU Next (rollback = `fastboot set_active a`).
 - OrangeFox recovery working, including FBE `/data` decryption.
 
 ## The key fact — a Lineage-sourced kernel already boots stock A12
@@ -200,17 +201,16 @@ config.gz to check for these is always a false negative.
 
 ## Status
 
-- **Phases 0–5 built and booting on-device.**
-  - Standalone build reproduces the OrangeFox reference `.config` byte for byte.
-  - AnyKernel3 + `fastboot boot` trial pipeline works; `boot_b-stock.img` is the
-    ramdisk/header donor, stock header preserved verbatim.
-  - KSU version **33192** (matching manager release v3.3.0 / 33214); manager
-    reports a compatible kernel and runs.
-  - Subsystems verified on the KSU kernel: FBE `/data`, Wi-Fi, audio (121
-    `/dev/snd` nodes), 29 sensors, modem, 8 CPUs, battery. No Oops/BUG.
-  - SuSFS backport boots; modules activate at boot (newfstat init.rc hook).
-- `su` isn't available to `adb shell` until shell is granted in the manager —
-  KSU allowlists nothing by default. A denial there is not a fault.
+- **v1.1 released** (tag `v1.1`, GitHub release + AnyKernel zip) — tested on both
+  stock Android 12 and LineageOS 22.2. Duck Detector SELinux surface reads clean;
+  `uname` brands root (via susfs) and shows stock to apps.
+- Standalone build reproduces the OrangeFox reference `.config` byte for byte;
+  AnyKernel3 + `fastboot boot` trial pipeline works (use a live-slot donor for a
+  RAM-boot img — never a stale/stock donor on LineageOS).
+- Subsystems verified: FBE `/data`, Wi-Fi, audio, sensors, modem, CPUs, battery;
+  no Oops/BUG. SuSFS + modules activate at boot.
+- `su` isn't available to `adb shell` until granted in the manager — KSU
+  allowlists nothing by default; a denial there is not a fault.
 
 ## Decisions (2026-07-27)
 
