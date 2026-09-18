@@ -33,17 +33,17 @@ KERNEL_DEFCONFIG="lineageos_caymanslm_defconfig"
 # CLAUDE.md for the measurements.
 KSU_URL="https://github.com/KernelSU-Next/KernelSU-Next"
 KSU_BRANCH="legacy"
-KSU_REF="53791c92bff13d62338f29cc9da035a37652ca91"   # 2026-07-20
+KSU_REF="a54e4fa46c6cc25bcaa055cf14d790194beffed8"   # legacy HEAD 2026-07-29 (latest KSU-Next that supports 4.x; dev/stable require KPROBES, pruned 4.x Jan 2026)
 
 # ----------------------------------------------------------------- SuSFS ---
 # Kernel-side only: userspace policy/tooling remains a separately installed
-# module. This is ShirkNeko's maintained v2.2.0 source, backported from its
+# module. This is ShirkNeko's maintained v2.3.0 source, backported from its
 # Android 12 / Linux 5.10 patch to this device's Linux 4.9.337 tree.
 SUSFS_URL="https://github.com/ShirkNeko/susfs4ksu"
 SUSFS_BRANCH="gki-android12-5.10"
-SUSFS_REF="c5723cc09c79b57a25f24212b8bfe6e255ea3eef"
-SUSFS_VERSION="v2.2.0"
-SUSFS_KERNEL_PATCH="caymanslm-susfs-v2.2.0-4.9-backport.patch"
+SUSFS_REF="f3b5aecf53ff8b3296603071b91383f6be6c7cbb"
+SUSFS_VERSION="v2.3.0"
+SUSFS_KERNEL_PATCH="caymanslm-susfs-v2.3.0-4.9-backport.patch"
 
 # ----------------------------------------------------------- AnyKernel3 ---
 ANYKERNEL_URL="https://github.com/osm0sis/AnyKernel3"

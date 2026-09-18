@@ -165,7 +165,7 @@ setup_kernelsu() {
   # replay; do not make the release image depend on wildcard ordering.
   local ksu_patch_names=(
     ksu-legacy-zygote-app-process64.patch
-    ksun-v3.2.0-legacy-susfs-v2.2.0.patch
+    ksun-legacy-susfs-v2.3.0.patch
     z-ksu-legacy-susfs-manager-setuid.patch
     zz-ksu-legacy-initial-manager-scan.patch
     zzz-ksu-legacy-verified-manager-scan.patch
@@ -329,9 +329,9 @@ kernel_patch_names=(
   caymanslm-selinux-policydb-atomic-alloc.patch
   caymanslm-susfs-spoof-proc-version.patch
   caymanslm-susfs-spoof-uts-sysctl.patch
-  caymanslm-susfs-v2.2.0-4.9-backport.patch
-  caymanslm-susfs-v2.2.0-boot-fixes.patch
-  caymanslm-susfs-v2.2.0-uname-ksu-domain-gate.patch
+  caymanslm-susfs-v2.3.0-4.9-backport.patch
+  caymanslm-susfs-v2.3.0-boot-fixes.patch
+  caymanslm-susfs-v2.3.0-uname-ksu-domain-gate.patch
   caymanslm-susfs-z2-selinux-avc-audit-null-guard.patch
   caymanslm-watchdog-bark-window.patch
   caymanslm-zz-nomount-4.9-integration.patch

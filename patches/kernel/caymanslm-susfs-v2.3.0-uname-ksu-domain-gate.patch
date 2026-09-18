@@ -1,7 +1,8 @@
 diff --git a/fs/susfs.c b/fs/susfs.c
+index 572f80adf0c7..d1ca710ba1ec 100644
 --- a/fs/susfs.c
 +++ b/fs/susfs.c
-@@ -661,6 +661,16 @@
+@@ -768,6 +768,16 @@ void susfs_spoof_uname(struct new_utsname* tmp) {
  
  	if (!static_branch_unlikely(&susfs_is_uname_spoof_buffer_set))
  		return;
