@@ -1,0 +1,33 @@
+diff --git a/fs/susfs.c b/fs/susfs.c
+index 572f80adf0c7..671a7184ace7 100644
+--- a/fs/susfs.c
++++ b/fs/susfs.c
+@@ -26,6 +26,7 @@
+ #include "mount.h"
+ 
+ extern bool susfs_is_current_ksu_domain(void);
++extern bool is_zygote(const struct cred *cred);
+ extern void setup_selinux(const char *domain, struct cred *cred);
+ extern struct cred *ksu_cred;
+ extern int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt);
+@@ -768,6 +769,20 @@ void susfs_spoof_uname(struct new_utsname* tmp) {
+ 
+ 	if (!static_branch_unlikely(&susfs_is_uname_spoof_buffer_set))
+ 		return;
++	/* Wraith: brand only a real root/ksu context, and NEVER the zygote process.
++	 * os.version (java.lang.System) is captured ONCE by zygote at startup via
++	 * uname() and inherited by every forked app; if zygote saw the brand, an app
++	 * would read a branded os.version while its own live uname() returns stock --
++	 * a uname-source divergence a detector flags as version spoofing. Excluding
++	 * zygote keeps os.version stock and matching the app-visible uname. is_zygote()
++	 * string-matches the zygote domain even before KSU caches its SID, so this
++	 * holds at first boot and across zygote restarts. A `su` shell is not zygote,
++	 * so it still sees the brand (via the uid==0 path -- su-exec'd children run in
++	 * u:r:shell:s0 at uid 0, not the ksu domain). */
++	if (is_zygote(current_cred()))
++		return;
++	if (current_uid().val != 0 && !susfs_is_current_ksu_domain())
++		return;
+ 	do {
+ 		seq = read_seqbegin(&susfs_uname_seqlock);
+ 		strscpy(tmp->release, my_uname.release, __NEW_UTS_LEN);

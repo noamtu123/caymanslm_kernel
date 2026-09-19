@@ -44,10 +44,10 @@ index 7eebd9f950a8..268a26992b25 100644
  	}
  	if (redirect_pathname && !IS_ERR(redirect_pathname))
 diff --git a/fs/susfs.c b/fs/susfs.c
-index 09e223e236b0..10fe98f67a78 100644
+index 96a589bae636..572f80adf0c7 100644
 --- a/fs/susfs.c
 +++ b/fs/susfs.c
-@@ -659,6 +659,8 @@ void susfs_set_uname(void __user **user_info) {
+@@ -766,6 +766,8 @@ void susfs_set_uname(void __user **user_info) {
  void susfs_spoof_uname(struct new_utsname* tmp) {
  	unsigned seq;
  
@@ -56,35 +56,44 @@ index 09e223e236b0..10fe98f67a78 100644
  	do {
  		seq = read_seqbegin(&susfs_uname_seqlock);
  		strscpy(tmp->release, my_uname.release, __NEW_UTS_LEN);
-@@ -753,13 +755,18 @@ void susfs_set_cmdline_or_bootconfig(void __user **user_info) {
+@@ -860,12 +862,17 @@ void susfs_set_cmdline_or_bootconfig(void __user **user_info) {
  	}
  }
  
 -void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
 +int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
  	unsigned seq;
+-	char *buf = (char *)kmalloc(SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE, GFP_KERNEL);
++	char *buf;
  
 +	if (!static_branch_unlikely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set))
 +		return 1;
 +	if (!fake_cmdline_or_bootconfig)
 +		return 1;
++	buf = (char *)kmalloc(SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE, GFP_KERNEL);
+ 	if (!buf) {
+-		return;
++		return 1;
+ 	}
  	do {
  		seq = read_seqbegin(&susfs_fake_cmdline_or_bootconfig_seqlock);
- 		seq_puts(m, fake_cmdline_or_bootconfig);
+@@ -873,6 +880,7 @@ void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
  	} while (read_seqretry(&susfs_fake_cmdline_or_bootconfig_seqlock, seq));
+ 	seq_puts(m, buf);
+ 	kfree(buf);
 +	return 0;
  }
  #endif
  
-@@ -768,6 +775,7 @@ void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
+@@ -881,6 +889,7 @@ void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
  static DEFINE_MUTEX(susfs_mutex_lock_open_redirect);
- static DEFINE_HASHTABLE(OPEN_REDIRECT_HLIST, 10);
+ static DEFINE_HASHTABLE(OPEN_REDIRECT_HLIST, 14);
  DEFINE_SRCU(susfs_srcu_open_redirect);
 +DEFINE_STATIC_KEY_FALSE(susfs_is_open_redirect_enabled);
  
  void susfs_add_open_redirect(void __user **user_info) {
  	struct st_susfs_open_redirect info = {0};
-@@ -923,6 +931,8 @@ void susfs_add_open_redirect(void __user **user_info) {
+@@ -1036,6 +1045,8 @@ void susfs_add_open_redirect(void __user **user_info) {
  out_path_put_redirected_path:
  	path_put(&redirected_path);
  out_copy_to_user:

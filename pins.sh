@@ -26,25 +26,26 @@ KERNEL_DEFCONFIG="lineageos_caymanslm_defconfig"
 # "Recommended 3.0~4.14") so NO manual fs/*.c hook patch is needed here -- unlike
 # KSU-Next legacy. Base build proven on this tree 2026-09-14.
 #
-# "Latest" == master HEAD, which is also tag `32630` and reports KSU_VERSION=32630
-# (hardcoded in kernel/Makefile, NOT git-count-derived). backslashxx FORCE-PUSHES
+# "Latest" == master HEAD, which is also tag `v3.3.0-39` (older builds were tagged
+# by number, e.g. `32630`). It still reports KSU_VERSION=32630 (hardcoded in
+# kernel/Makefile, NOT git-count-derived). backslashxx FORCE-PUSHES
 # master/staging, so a pinned SHA can be orphaned and become unfetchable -- setup
 # asserts the SHA is present and fails loudly if a force-push has removed it,
 # rather than silently drifting. Re-pin on update.
 KSU_URL="https://github.com/backslashxx/KernelSU"
 KSU_BRANCH="master"
-KSU_REF="73f2732829c1187dc2188dbec854cf45782a964e"   # master == tag 32630 (v3.3.0+), 2026-09-14
+KSU_REF="1d867429705d0aec7051667913c22d16237db312"   # master == tag v3.3.0-39, 2026-09-19
 KSU_VERSION="32630"
 
 # ----------------------------------------------------------------- SuSFS ---
 # Kernel-side only: userspace policy/tooling remains a separately installed
-# module. This is ShirkNeko's maintained v2.2.0 source, backported from its
+# module. This is ShirkNeko's maintained v2.3.0 source, backported from its
 # Android 12 / Linux 5.10 patch to this device's Linux 4.9.337 tree.
 SUSFS_URL="https://github.com/ShirkNeko/susfs4ksu"
 SUSFS_BRANCH="gki-android12-5.10"
-SUSFS_REF="c5723cc09c79b57a25f24212b8bfe6e255ea3eef"
-SUSFS_VERSION="v2.2.0"
-SUSFS_KERNEL_PATCH="caymanslm-susfs-v2.2.0-4.9-backport.patch"
+SUSFS_REF="f3b5aecf53ff8b3296603071b91383f6be6c7cbb"
+SUSFS_VERSION="v2.3.0"
+SUSFS_KERNEL_PATCH="caymanslm-susfs-v2.3.0-4.9-backport.patch"
 
 # ----------------------------------------------------------- AnyKernel3 ---
 ANYKERNEL_URL="https://github.com/osm0sis/AnyKernel3"
@@ -69,14 +70,30 @@ REFERENCE_CONFIG="${REFERENCE_CONFIG:-$FOX_TREE/out/target/product/caymanslm/obj
 # AOSP's mkbootimg/unpack_bootimg. Read-only use, like the toolchain above.
 MKBOOTIMG_DIR="${MKBOOTIMG_DIR:-$FOX_TREE/system/tools/mkbootimg}"
 
-# A STOCK boot image, used only as a donor for the ramdisk and header when
-# building a `fastboot boot` trial image. boot_b is the untouched slot (boot_a
-# currently carries the EDL kernel swap); its ramdisk is stock either way.
+# Donor for the ramdisk + header of a `fastboot boot` trial image. mkboot.sh
+# swaps ONLY our kernel/dtb into this donor and preserves everything else.
 #
-# Header is v2 with a SEPARATE dtb section, os_version 11.0.0,
-# os_patch_level 2022-06. All of that is preserved verbatim -- see mkboot.sh.
+# HARD RULE (see the ramboot-lineage-donor memory): the donor must be a LIVE
+# LineageOS boot pulled from the ACTIVE slot, never a stock/backup image -- a
+# mismatched ramdisk soft-bricked the phone once. So the default is a persistent
+# live donor saved under artifacts/, pulled ONCE and reused across every build.
+# Re-pull only after a ROM OTA; until then a stale ramdisk merely lands the
+# (non-destructive) RAM-boot in recovery, which is the signal to refresh it.
+#   Refresh:  adb reboot recovery  (OrangeFox = root)
+#             adb shell "dd if=/dev/block/bootdevice/by-name/boot_$(active slot)" \
+#                 > artifacts/boot-live-donor.img
+# The old stock donor remains only as a last-resort fallback when no live donor
+# has ever been saved (header v2, separate dtb, os_version 11.0.0).
+_PINS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIVE_DONOR="${LIVE_DONOR:-$_PINS_DIR/artifacts/boot-live-donor.img}"
 SIBLING_REPO="${SIBLING_REPO:-/mnt/e/orangefox_caymanslm}"
-STOCK_BOOT_IMG="${STOCK_BOOT_IMG:-$SIBLING_REPO/artifacts/edl-backup/boot_b-stock.img}"
+if [ -n "${STOCK_BOOT_IMG:-}" ]; then
+  :                                   # explicit override wins
+elif [ -f "$LIVE_DONOR" ]; then
+  STOCK_BOOT_IMG="$LIVE_DONOR"        # persistent live donor -- preferred
+else
+  STOCK_BOOT_IMG="$SIBLING_REPO/artifacts/edl-backup/boot_b-stock.img"
+fi
 
 # ------------------------------------------------------------ workspace ---
 # Deliberately OUTSIDE the OrangeFox tree: patching ~/fox/kernel/lge/sdm845

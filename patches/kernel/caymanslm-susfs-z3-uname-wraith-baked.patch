@@ -1,0 +1,27 @@
+diff --git a/fs/susfs.c b/fs/susfs.c
+index d1ca710ba1ec..287653fff593 100644
+--- a/fs/susfs.c
++++ b/fs/susfs.c
+@@ -1637,6 +1637,22 @@ static void susfs_run_extra_works(struct work_struct *work) {
+ void susfs_init(void) {
+ 	SUSFS_LOGI("Initializing susfs_extra_works\n");
+ 	INIT_WORK(&susfs_extra_works, susfs_run_extra_works);
++#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++	/* Wraith: bake the root-facing kernel identity into the kernel image so it
++	 * needs no susfs4ksu module, no CMD_SUSFS_SET_UNAME and no config.sh. The
++	 * real compile-time uname stays stock "4.9.337-perf" (verify-image and the
++	 * app-facing drop-in disguise depend on that); susfs_spoof_uname() is gated
++	 * to the root uid / ksu domain, so ONLY a root shell sees this brand while
++	 * every unprivileged caller keeps reading the real stock string. Only the
++	 * release ("uname -r") is branded; the version/build stamp is left real. A
++	 * later userspace CMD_SUSFS_SET_UNAME still overrides this default. */
++	write_seqlock(&susfs_uname_seqlock);
++	strscpy(my_uname.release, "4.9.337-Wraith-v1.2-xxksu", __NEW_UTS_LEN);
++	strscpy(my_uname.version, utsname()->version, __NEW_UTS_LEN);
++	write_sequnlock(&susfs_uname_seqlock);
++	if (!static_key_enabled(&susfs_is_uname_spoof_buffer_set))
++		static_branch_enable(&susfs_is_uname_spoof_buffer_set);
++#endif // #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+ 	SUSFS_LOGI("susfs is initialized! version: " SUSFS_VERSION " \n");
+ }
+ 

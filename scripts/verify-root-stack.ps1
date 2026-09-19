@@ -42,7 +42,7 @@ $devNow = [double]$parts[0]
 $uptime = [double]$parts[1]
 $bootEpoch = [long]($devNow - $uptime)
 
-Assert-Equal 'SuSFS version' (Invoke-AdbRoot '/data/adb/ksu/bin/ksu_susfs show version') 'v2.2.0'
+Assert-Equal 'SuSFS version' (Invoke-AdbRoot '/data/adb/ksu/bin/ksu_susfs show version') 'v2.3.0'
 
 $expectedFeatures = @(
   'CONFIG_KSU_SUSFS_SUS_PATH',

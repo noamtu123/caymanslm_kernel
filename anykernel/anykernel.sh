@@ -15,7 +15,7 @@
 # Lineage-sourced kernel boot LG stock at all.
 
 properties() { '
-kernel.string=caymanslm_Wraith_v1.1-KernelSU-Next-SUSFS-NoMount
+kernel.string=caymanslm_Wraith_v1.2-xxKSU-SUSFS-NoMount
 do.devicecheck=1
 do.initd=0
 do.kernel=1
@@ -85,8 +85,8 @@ while IFS= read -r _wl; do ui_print "$_wl"; done <<'WRAITH_ART'
 |   \ V  V /  | |   | (_| || || |_ | | | | |
 |    \_/\_/   |_|    \__,_||_| \__||_| |_| |
 |                                          |
-| the wraith kernel   v1.1                 |
-| KernelSU Next + SuSFS + NoMount          |
+| the wraith kernel   v1.2 (xxksu)         |
+| backslashxx KSU + SuSFS + NoMount        |
 |                                          |
 | Device: LM-G910EMW                       |
 +------------------------------------------+

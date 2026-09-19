@@ -179,7 +179,7 @@ setup_kernelsu() {
   # fork-independent kernel-side SuSFS backport to backslashxx's supercall /
   # selinux / setuid / init.
   local bxx_ksu_patch_names=(
-    bxx-susfs-v2.2.0.patch
+    bxx-susfs-v2.3.0.patch
   )
   local pn
   for pn in "${bxx_ksu_patch_names[@]}"; do
@@ -223,8 +223,14 @@ kernel_patch_names=(
   # KSU-side bridge onto backslashxx is applied separately in setup_kernelsu. These
   # sort after selinux-bounds and before watchdog; boot-fixes and the avc-audit
   # null-guard sort after the backport whose files they extend.
-  caymanslm-susfs-v2.2.0-4.9-backport.patch
-  caymanslm-susfs-v2.2.0-boot-fixes.patch
+  caymanslm-susfs-v2.3.0-4.9-backport.patch
+  caymanslm-susfs-v2.3.0-boot-fixes.patch
+  # Root-facing uname gate: brand only uid 0 / the ksu domain, never zygote (else
+  # os.version leaks the brand). Uses backslashxx's exported is_zygote().
+  caymanslm-susfs-v2.3.0-uname-ksu-domain-gate.patch
+  # Bakes the root-facing "4.9.337-Wraith-<ver>-xxksu" uname brand into
+  # susfs_init(). Edits fs/susfs.c, so it sorts AFTER the susfs-v2.3.0-* patches.
+  caymanslm-susfs-z3-uname-wraith-baked.patch
   caymanslm-susfs-z2-selinux-avc-audit-null-guard.patch
   caymanslm-watchdog-bark-window.patch
   # PHASE 3 -- NoMount. Self-contained fs/nomount/ engine (no KSU dependency);
@@ -246,7 +252,6 @@ kernel_bxx_deferred_patch_names=(
   caymanslm-selinux-policydb-atomic-alloc.patch
   caymanslm-susfs-spoof-proc-version.patch
   caymanslm-susfs-spoof-uts-sysctl.patch
-  caymanslm-susfs-v2.2.0-uname-ksu-domain-gate.patch
   caymanslm-zzz-selinux-hide-injected-types.patch
   caymanslm-zzz2-selinux-export-policy-seqno.patch
   caymanslm-zzz3-selinux-hide-dirty-edges.patch

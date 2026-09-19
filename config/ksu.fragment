@@ -13,7 +13,7 @@ CONFIG_KSU_FEATURE_SULOG=y
 CONFIG_KSU_FEATURE_ADBROOT=y
 #
 # SuSFS (phase 2): backslashxx has no built-in SuSFS. The KSU-side bridge
-# (patches/kernelsu/bxx-susfs-v2.2.0.patch) adds these CONFIG_KSU_SUSFS* symbols
+# (patches/kernelsu/bxx-susfs-v2.3.0.patch) adds these CONFIG_KSU_SUSFS* symbols
 # and wires them to the fork-independent kernel-side backport. Same feature set
 # the KSU-Next build shipped.
 CONFIG_KSU_SUSFS=y
