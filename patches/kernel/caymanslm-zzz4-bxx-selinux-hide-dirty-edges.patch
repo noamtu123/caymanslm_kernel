@@ -1,0 +1,52 @@
+diff --git a/security/selinux/ss/services.c b/security/selinux/ss/services.c
+--- a/security/selinux/ss/services.c
++++ b/security/selinux/ss/services.c
+@@ -3520,3 +3520,31 @@
+ 	return 0;
+ 
+ }
++
++#ifdef CONFIG_KSU
++/* Wraith: hide the KSU/backslashxx-injected and ROM "dirty" sepolicy allow
++ * edges from an app that probes them through selinux_check_access. Every rule
++ * stays in the live policy -- real enforcement via avc_has_perm is untouched;
++ * only the app-facing query path (sel_write_access) is masked, and only for a
++ * sandboxed app (uid >= 10000 with seccomp installed), never the uid-0 root
++ * stack. Matches on the caller-supplied context strings, so it needs no
++ * policydb lookup and takes no lock. backslashxx's own selinux_hide only
++ * blocks context WRITES (setprocattr / selinuxfs transaction); this closes the
++ * access-DECISION query path it leaves open (shell->su, adbd->adbroot, ...). */
++bool selinux_edge_hidden_from_caller(const char *scon, const char *tcon)
++{
++	if (!(test_thread_flag(TIF_SECCOMP) && current_uid().val >= 10000))
++		return false;
++	if (strstr(scon, ":system_server:") && strstr(tcon, ":system_server:"))
++		return true;
++	if (strstr(scon, ":shell:") && strstr(tcon, ":su:"))
++		return true;
++	if (strstr(scon, ":zygote:") && strstr(tcon, ":adb_data_file:"))
++		return true;
++	if (strstr(scon, ":fsck_untrusted:") && strstr(tcon, ":fsck_untrusted:"))
++		return true;
++	if (strstr(scon, ":adbd:") && strstr(tcon, ":adbroot:"))
++		return true;
++	return false;
++}
++#endif
+diff --git a/security/selinux/selinuxfs.c b/security/selinux/selinuxfs.c
+--- a/security/selinux/selinuxfs.c
++++ b/security/selinux/selinuxfs.c
+@@ -797,6 +797,13 @@
+ 		goto out;
+ 
+ 	security_compute_av_user(ssid, tsid, tclass, &avd);
++#ifdef CONFIG_KSU
++	{
++		extern bool selinux_edge_hidden_from_caller(const char *scon, const char *tcon);
++		if (selinux_edge_hidden_from_caller(scon, tcon))
++			avd.allowed = 0;
++	}
++#endif
+ 
+ 	length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT,
+ 			  "%x %x %x %x %u %x",

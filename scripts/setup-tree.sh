@@ -237,6 +237,12 @@ kernel_patch_names=(
   # shares fs/Kconfig + fs/Makefile with SuSFS so it MUST sort last, after the
   # susfs backport that adds the fs/Makefile susfs.o line it contexts against.
   caymanslm-zz-nomount-4.9-integration.patch
+  # Wraith stealth: hide the backslashxx/ROM-injected "dirty" sepolicy allow
+  # edges (shell->su, adbd->adbroot, ...) from an app's selinux_check_access.
+  # backslashxx's own selinux_hide only blocks context WRITES, not the access
+  # query path -- this closes it. Self-contained (security/selinux/{ss/services,
+  # selinuxfs}.c, gated CONFIG_KSU); NOT the KSU-Next zzz2/zzz3 stack. Sorts last.
+  caymanslm-zzz4-bxx-selinux-hide-dirty-edges.patch
 )
 # Parked for later migration phases -- categorised so the allowlist check passes,
 # but NOT applied on this branch. KSU-Next-specific fixes (manual hooks, initrc,
