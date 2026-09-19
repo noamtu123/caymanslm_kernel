@@ -10,10 +10,10 @@ you, invisible to apps that look for root.
 
 ## Download & install
 
-Grab the latest [**release**](https://github.com/noamtu123/caymanslm_kernel/releases/latest),
-then in OrangeFox: RAM‑boot the trial `boot-*.img` to confirm it boots, and flash
-the AnyKernel3 zip. The zip swaps only the kernel and keeps your ramdisk, so one
-zip works on both stock Android 12 and LineageOS; `dtbo` is never touched.
+Grab the latest [**release**](https://github.com/noamtu123/caymanslm_kernel/releases/latest)
+and flash the AnyKernel3 zip in OrangeFox. It swaps only the kernel and keeps
+your ramdisk, so one zip works on both stock Android 12 and LineageOS; `dtbo` is
+never touched.
 
 Two variants — **same kernel base and SuSFS backport, different KSU fork:**
 
@@ -62,7 +62,7 @@ Everything builds in WSL; there is no CI.
 ```sh
 ./scripts/setup-tree.sh              # clone kernel + KernelSU + SuSFS at pinned refs
 ./scripts/build.sh --profile=release # -> Image.gz-dtb (hardened; use for a deliverable)
-./scripts/package.sh                 # -> artifacts/*.zip and a trial boot.img
+./scripts/package.sh                 # -> artifacts/*.zip (AnyKernel3, flash in OrangeFox)
 ```
 
 `--profile=release` strips the broad symbol/debug disclosure (`KALLSYMS_ALL`,
