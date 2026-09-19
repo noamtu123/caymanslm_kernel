@@ -332,6 +332,10 @@ kernel_patch_names=(
   caymanslm-susfs-v2.3.0-4.9-backport.patch
   caymanslm-susfs-v2.3.0-boot-fixes.patch
   caymanslm-susfs-v2.3.0-uname-ksu-domain-gate.patch
+  # Bakes the root-facing "4.9.337-Wraith" uname brand into susfs_init() so it
+  # needs no susfs4ksu module / set_uname / config.sh. Edits fs/susfs.c, so it
+  # must sort AFTER the three susfs-v2.3.0-* patches that also touch it.
+  caymanslm-susfs-z3-uname-wraith-baked.patch
   caymanslm-susfs-z2-selinux-avc-audit-null-guard.patch
   caymanslm-watchdog-bark-window.patch
   caymanslm-zz-nomount-4.9-integration.patch

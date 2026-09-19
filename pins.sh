@@ -68,14 +68,30 @@ REFERENCE_CONFIG="${REFERENCE_CONFIG:-$FOX_TREE/out/target/product/caymanslm/obj
 # AOSP's mkbootimg/unpack_bootimg. Read-only use, like the toolchain above.
 MKBOOTIMG_DIR="${MKBOOTIMG_DIR:-$FOX_TREE/system/tools/mkbootimg}"
 
-# A STOCK boot image, used only as a donor for the ramdisk and header when
-# building a `fastboot boot` trial image. boot_b is the untouched slot (boot_a
-# currently carries the EDL kernel swap); its ramdisk is stock either way.
+# Donor for the ramdisk + header of a `fastboot boot` trial image. mkboot.sh
+# swaps ONLY our kernel/dtb into this donor and preserves everything else.
 #
-# Header is v2 with a SEPARATE dtb section, os_version 11.0.0,
-# os_patch_level 2022-06. All of that is preserved verbatim -- see mkboot.sh.
+# HARD RULE (see the ramboot-lineage-donor memory): the donor must be a LIVE
+# LineageOS boot pulled from the ACTIVE slot, never a stock/backup image -- a
+# mismatched ramdisk soft-bricked the phone once. So the default is a persistent
+# live donor saved under artifacts/, pulled ONCE and reused across every build.
+# Re-pull only after a ROM OTA; until then a stale ramdisk merely lands the
+# (non-destructive) RAM-boot in recovery, which is the signal to refresh it.
+#   Refresh:  adb reboot recovery  (OrangeFox = root)
+#             adb shell "dd if=/dev/block/bootdevice/by-name/boot_$(active slot)" \
+#                 > artifacts/boot-live-donor.img
+# The old stock donor remains only as a last-resort fallback when no live donor
+# has ever been saved (header v2, separate dtb, os_version 11.0.0).
+_PINS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIVE_DONOR="${LIVE_DONOR:-$_PINS_DIR/artifacts/boot-live-donor.img}"
 SIBLING_REPO="${SIBLING_REPO:-/mnt/e/orangefox_caymanslm}"
-STOCK_BOOT_IMG="${STOCK_BOOT_IMG:-$SIBLING_REPO/artifacts/edl-backup/boot_b-stock.img}"
+if [ -n "${STOCK_BOOT_IMG:-}" ]; then
+  :                                   # explicit override wins
+elif [ -f "$LIVE_DONOR" ]; then
+  STOCK_BOOT_IMG="$LIVE_DONOR"        # persistent live donor -- preferred
+else
+  STOCK_BOOT_IMG="$SIBLING_REPO/artifacts/edl-backup/boot_b-stock.img"
+fi
 
 # ------------------------------------------------------------ workspace ---
 # Deliberately OUTSIDE the OrangeFox tree: patching ~/fox/kernel/lge/sdm845
