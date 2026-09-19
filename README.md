@@ -11,9 +11,7 @@ you, invisible to apps that look for root.
 ## Download & install
 
 Grab the latest [**release**](https://github.com/noamtu123/caymanslm_kernel/releases/latest)
-and flash the AnyKernel3 zip. For a first install, flash it from a custom
-recovery like OrangeFox. It swaps only the kernel and keeps your ramdisk, so one
-zip works on both stock Android 12 and LineageOS; `dtbo` is never touched.
+and flash the AnyKernel3 zip
 
 Two variants — **same kernel base and SuSFS backport, different KSU fork:**
 
