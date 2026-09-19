@@ -1,85 +1,47 @@
 # caymanslm_kernel — the Wraith kernel for the LG Velvet 4G
 
-A rooted, hardened Android kernel for the **LG Velvet 4G (LM‑G910EMW**,
-`caymanslm`, Snapdragon 845), built from LineageOS 4.9.337 source with
-**KernelSU**, **SuSFS**, and **NoMount**. "Wraith" is the goal: fully rooted to
-you, invisible to apps that look for root.
+A rooted, stealthy Android kernel for the **LG Velvet 4G** (LM‑G910EMW,
+`caymanslm`, Snapdragon 845), with **KernelSU**, **SuSFS**, and **NoMount** —
+fully rooted to you, invisible to apps that check for root.
 
-> **LM‑G910EMW only.** Not the 5G Velvet (`caymanlm` / SDM765G) — different SoC,
-> different device. Every script here refuses to run on anything else.
+> **LM‑G910EMW only.** Not the 5G Velvet (`caymanlm` / SDM765G) — different SoC.
+> Every script here refuses to run on anything else.
 
-## Download & install
+## Install
 
-Grab the latest [**release**](https://github.com/noamtu123/caymanslm_kernel/releases/latest)
-and flash the AnyKernel3 zip
+Download the latest [**release**](https://github.com/noamtu123/caymanslm_kernel/releases/latest)
+and flash the AnyKernel3 zip.
 
-Two variants — **same kernel base and SuSFS backport, different KSU fork:**
+Two variants — same kernel and SuSFS, different KernelSU fork:
 
-| Variant | KSU fork | Choose it if… |
+| Variant | Fork | What it is |
 |---|---|---|
-| **ksun** | [KernelSU‑Next](https://github.com/KernelSU-Next/KernelSU-Next) `legacy` | you want the established, battle‑tested line (v1.0/v1.1 lineage) |
-| **xxksu** | [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) `v3.3.0‑39` | you want the newer fork with syscall‑table hooking |
+| **ksun** *(default)* | [KernelSU‑Next](https://github.com/KernelSU-Next/KernelSU-Next) | polished, well‑organized KSU with a built‑in kernel flasher |
+| **xxksu** | [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) | modern KSU fork built for older kernels |
 
-Both report **0 danger** on Duck Detector — kernel, mount, SELinux, SU, TEE,
-Zygisk and bootloader all clear (remaining warnings are the ROM simply being
-LineageOS, not the kernel).
+*This branch is `ksun`; the other variant lives on the `xxksu` branch.*
 
 ## What's inside
 
-- **KernelSU** — kernel‑level root with a per‑app manager.
-- **SuSFS `v2.3.0`** — mount / path / kstat / uname / cmdline hiding (4.9 backport).
-- **NoMount `v2.0.0`** — mountless module engine, so there are no overlay mounts to detect.
-- **Wraith stealth** — the `uname` brand is baked into the kernel: a root/`su`
-  shell sees `4.9.337-Wraith-v1.2-<variant>`, every app sees stock
-  `4.9.337-perf`, with no userspace helper. Plus redacted `/proc/config.gz`,
-  SELinux injected‑type and dirty‑edge hiding, and no su‑access kernel logs.
-
-## Branches
-
-| Branch | Variant |
-|---|---|
-| `ksun` *(default)* | KernelSU‑Next `legacy` |
-| `xxksu` | backslashxx/KernelSU `v3.3.0‑39` |
-
-**This branch is `ksun`.** Both branches share the kernel base and SuSFS
-backport; they differ only in the KSU fork and its hooking method. See
-[`CLAUDE.md`](CLAUDE.md) for implementation details.
-
-## Changelog
-
-- **v1.2** — SuSFS `v2.2.0 → v2.3.0`; added the **xxksu** variant and hid its
-  injected SELinux edges from apps; baked the Wraith `uname` into the kernel.
-- **[v1.1](https://github.com/noamtu123/caymanslm_kernel/releases/tag/v1.1)** —
-  perfected SELinux hiding, NoMount `v2.0.0`; tested on stock Android 12 and LineageOS 22.2.
-- **v1.0** — first release: KernelSU‑Next + SuSFS + NoMount.
+- **KernelSU** — kernel‑level root with a manager app.
+- **SuSFS `v2.3.0`** — hides mounts, paths, and kernel identity.
+- **NoMount `v2.0.0`** — mountless modules, so there are no overlay mounts to detect.
+- **Wraith stealth** — root sees `uname` `4.9.337-Wraith`, apps see stock
+  `4.9.337-perf`; `/proc/config.gz` is redacted and SELinux traces are hidden.
+  Passes Duck Detector with **0 danger**.
 
 ## Building
 
-Everything builds in WSL; there is no CI.
+WSL, no CI:
 
 ```sh
 ./scripts/setup-tree.sh              # clone kernel + KernelSU + SuSFS at pinned refs
-./scripts/build.sh --profile=release # -> Image.gz-dtb (hardened; use for a deliverable)
+./scripts/build.sh --profile=release # -> Image.gz-dtb
 ./scripts/package.sh                 # -> artifacts/*.zip (AnyKernel3)
 ```
 
-`--profile=release` strips the broad symbol/debug disclosure (`KALLSYMS_ALL`,
-`DEBUG_INFO`, kprobes, kcore, devmem, …). Bare `./scripts/build.sh` builds the
-`baseline` profile, which keeps them — fine for development, not for a shipped
-kernel (`package.sh` warns if you package a baseline build). All upstream
-revisions live in [`pins.sh`](pins.sh), pinned by SHA and asserted after
-checkout — nothing floats.
-
-## Manager discovery after a cold boot
-
-The manager APK lives in credential‑encrypted storage that stays locked until
-`/data` unlocks (~30–55 s after a cold boot), so nothing can crown the manager
-before then. Discovery is made reliable across that window (bounded retry
-backoff, driver fd handed to the running manager, full search on
-`boot_completed`). Open the manager **after** unlock and it reads "working"
-immediately; open it **before** and its one‑time check may cache "not
-integrated" until you reopen it. `"Zygisk required"` on modules is a separate
-wait on ReZygisk's daemons, not the kernel.
+Every upstream ref is pinned by SHA in [`pins.sh`](pins.sh); see
+[`CLAUDE.md`](CLAUDE.md) for internals.
 
 ## Repo layout
 
@@ -92,14 +54,10 @@ wait on ReZygisk's daemons, not the kernel.
 | `config/` | defconfig fragments and build profiles |
 | `anykernel/` | AnyKernel3 device configuration |
 
-**No forks** — upstream is cloned at a pinned ref and every change lives here as
-a patch, re‑applied by `setup-tree.sh`.
-
 ## Sibling repo
 
 [`orangefox_caymanslm`](https://github.com/noamtu123/orangefox_caymanslm) —
-OrangeFox recovery for this device, and the source of the pinned kernel tree, the
-EDL kernel patch, and the boot‑image kernel‑swap script.
+OrangeFox recovery for this device, and the source of the pinned kernel tree.
 
 ## Licence
 
