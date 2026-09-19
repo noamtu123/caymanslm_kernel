@@ -16,7 +16,7 @@ index d1ca710ba1ec..287653fff593 100644
 +	 * release ("uname -r") is branded; the version/build stamp is left real. A
 +	 * later userspace CMD_SUSFS_SET_UNAME still overrides this default. */
 +	write_seqlock(&susfs_uname_seqlock);
-+	strscpy(my_uname.release, "4.9.337-Wraith", __NEW_UTS_LEN);
++	strscpy(my_uname.release, "4.9.337-Wraith-v1.2-ksun", __NEW_UTS_LEN);
 +	strscpy(my_uname.version, utsname()->version, __NEW_UTS_LEN);
 +	write_sequnlock(&susfs_uname_seqlock);
 +	if (!static_key_enabled(&susfs_is_uname_spoof_buffer_set))
