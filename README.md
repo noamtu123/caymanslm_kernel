@@ -9,29 +9,33 @@ Snapdragon 845), built from LineageOS 4.9.337 source, carrying
 
 ## Status
 
-**`main` (v1.2 line):** KernelSU Next `legacy` + SuSFS `v2.3.0` (4.9 backport) +
-NoMount `v2.0.0`. The kernel's own identity is branded: `uname -r` reads
-`4.9.337-Wraith-v1.2-ksun` to a root/`su` shell and stock `4.9.337-perf` to
-unprivileged apps — baked into the kernel, no userspace helper required. Verified
-booting on LineageOS 22.2; a Duck Detector scan (2026‑09‑18 build) reports **0
-danger** — kernel, mount, SELinux, SU, TEE, Zygisk and bootloader checks all
-clear (remaining warnings are the ROM itself being LineageOS, not the kernel).
+**`xxksu` (this branch, v1.2 line):** [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU)
+`v3.3.0‑39` + SuSFS `v2.3.0` (4.9 backport) + NoMount `v2.0.0`. Uses
+syscall‑table hooking, so no manual `fs/*.c` hook patches are needed on this
+tree. The kernel's identity is branded: `uname -r` reads
+`4.9.337-Wraith-v1.2-xxksu` to a root/`su` shell and stock `4.9.337-perf` to
+unprivileged apps — baked in, no userspace helper. Booted on LineageOS 22.2; a
+Duck Detector scan reports **0 danger** — kernel, mount, SELinux, SU, TEE,
+Zygisk and bootloader all clear (backslashxx's injected sepolicy edges are
+hidden from app queries too; remaining warnings are the ROM being LineageOS).
 
-**Last tagged release: [v1.1](https://github.com/noamtu123/caymanslm_kernel/releases/tag/v1.1)** —
-KernelSU Next `legacy` + SuSFS `v2.2.0` + NoMount `v2.0.0`, tested on both stock
-Android 12 (`G91030a`) and LineageOS 22.2.
+**Sibling variant:** `main` runs [KernelSU‑Next](https://github.com/KernelSU-Next/KernelSU-Next)
+`legacy` on the same kernel base and SuSFS backport. Previous tag:
+[v1.1](https://github.com/noamtu123/caymanslm_kernel/releases/tag/v1.1).
 
 ### KernelSU variants
 
 The root stack is tracked per KSU fork; the active fork is baked into the `uname`
-brand (`…-ksun` vs `…-xxksu`):
+brand (`…-ksun` vs `…-xxksu`). **v1.2 releases both** — pick one AnyKernel zip:
 
 | Branch | Fork | Notes |
 |---|---|---|
-| `main` | [KernelSU‑Next](https://github.com/KernelSU-Next/KernelSU-Next) `legacy` | non‑GKI 4.9, manual hooks; the only KSU‑Next line that still supports pre‑4.14 (dev/stable dropped 4.x and require KPROBES) |
-| `xxksu` | [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) | syscall‑table hooking; experimental, not yet released |
+| `main` | [KernelSU‑Next](https://github.com/KernelSU-Next/KernelSU-Next) `legacy` | non‑GKI 4.9, manual hooks; the only KSU‑Next line that still supports pre‑4.14 (dev/stable dropped 4.x and require KPROBES). SuSFS `v2.3.0`. Duck **0 danger**. |
+| `xxksu` | [backslashxx/KernelSU](https://github.com/backslashxx/KernelSU) `v3.3.0‑39` | syscall‑table hooking — no manual `fs/*.c` hooks needed on this tree. SuSFS `v2.3.0` + NoMount. Booted on LineageOS 22.2; Duck **0 danger** (its injected sepolicy edges are hidden from app queries). |
 
-See [`CLAUDE.md`](CLAUDE.md) for implementation details.
+Both are the same kernel base and SuSFS backport; they differ only in the KSU
+fork and its hooking method. See [`CLAUDE.md`](CLAUDE.md) for implementation
+details.
 
 ## How it is delivered
 
